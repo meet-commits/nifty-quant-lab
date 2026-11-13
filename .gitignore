@@ -12,12 +12,14 @@ __pycache__/
 data/*.duckdb
 data/*.duckdb.wal
 data/*.wal
-data/*.parquet
 data/*.csv
 *.duckdb
 *.duckdb.wal
 *.wal
-*.parquet
+*.csv
+
+# Allow seed archive for cloud deployment
+!data/market_data.parquet
 
 # Secrets & Local Config
 .env

@@ -26,21 +26,34 @@ FEATURE_COLUMNS = [
 
 def load_raw_data() -> pd.DataFrame:
     """
-    Loads raw prices from DuckDB with a fallback to Parquet file.
+    Loads raw prices from DuckDB with a fallback to Parquet file,
+    or automatically synchronizes fresh data if running on a fresh container.
     """
     if os.path.exists(DB_PATH):
         try:
             con = duckdb.connect(DB_PATH, read_only=True)
             df = con.execute("SELECT * FROM daily_prices ORDER BY date ASC;").df()
             con.close()
-            return df
+            if not df.empty:
+                return df
         except Exception as e:
             print(f"⚠️ DuckDB read warning: {e}. Falling back to Parquet.")
 
     if os.path.exists(PARQUET_PATH):
-        return pd.read_parquet(PARQUET_PATH)
+        try:
+            df = pd.read_parquet(PARQUET_PATH)
+            if not df.empty:
+                return df
+        except Exception as e:
+            print(f"⚠️ Parquet read warning: {e}.")
 
-    raise FileNotFoundError("No market data found! Please run src/data_pipeline.py first.")
+    # Failsafe: Sync initial historical data on fresh cloud containers
+    try:
+        from data_pipeline import fetch_and_sync_daily_data
+        print("🔄 Cold start detected on cloud: auto-syncing historical market archive...")
+        return fetch_and_sync_daily_data(lookback_days=500)
+    except Exception as e:
+        raise FileNotFoundError(f"Failed to load or initialize market data: {e}")
 
 def build_feature_matrix(gap_threshold_pct: float = 0.20) -> pd.DataFrame:
     """
