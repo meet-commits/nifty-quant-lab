@@ -1,0 +1,23 @@
+# Environments
+.venv/
+env/
+ENV/
+
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data & Database files
+data/*.duckdb
+data/*.parquet
+data/*.csv
+*.duckdb
+*.parquet
+
+# Secrets & Local Config
+.env
+.env.local
+
+# Streamlit config
+.streamlit/
