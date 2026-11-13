@@ -25,18 +25,21 @@ def fetch_stock_real_ohlc(symbol: str, period: str = "3mo") -> pd.DataFrame:
     try:
         t = yf.Ticker(yf_ticker)
         df = t.history(period=period)
-        if not df.empty and len(df) >= 15:
+        if not df.empty:
             df = df.reset_index()
-            # Remove timezone for clean Plotly rendering
-            if hasattr(df['Date'].dt, 'tz_localize'):
-                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
-            else:
-                df['Date'] = pd.to_datetime(df['Date'])
-            df['RSI'] = calc_rsi(df['Close'], 14)
-            df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-            df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-            df['is_real'] = True
-            return df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'RSI', 'EMA20', 'EMA50', 'is_real']]
+            # Drop unfinalized rows with NaNs from Yahoo Finance
+            df = df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+            if len(df) >= 15:
+                # Remove timezone for clean Plotly rendering
+                if hasattr(df['Date'].dt, 'tz_localize'):
+                    df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+                else:
+                    df['Date'] = pd.to_datetime(df['Date'])
+                df['RSI'] = calc_rsi(df['Close'], 14)
+                df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+                df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+                df['is_real'] = True
+                return df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'RSI', 'EMA20', 'EMA50', 'is_real']]
     except Exception as e:
         print(f"⚠️ yfinance fetch error for {symbol}: {e}")
 
