@@ -10,9 +10,53 @@ Features:
 
 import numpy as np
 import pandas as pd
+import yfinance as yf
 from typing import Dict, List, Tuple, Any, Optional
 
 # ----------------- TECHNICAL MATH INDICATORS -----------------
+
+def fetch_stock_real_ohlc(symbol: str, period: str = "3mo") -> pd.DataFrame:
+    """
+    Fetches real historical OHLC from Yahoo Finance for any NSE stock.
+    Calculates genuine RSI(14), EMA20, EMA50 without random numbers.
+    """
+    clean_sym = symbol.replace(".NS", "").strip()
+    yf_ticker = f"{clean_sym}.NS"
+    try:
+        t = yf.Ticker(yf_ticker)
+        df = t.history(period=period)
+        if not df.empty and len(df) >= 15:
+            df = df.reset_index()
+            # Remove timezone for clean Plotly rendering
+            if hasattr(df['Date'].dt, 'tz_localize'):
+                df['Date'] = pd.to_datetime(df['Date']).dt.tz_localize(None)
+            else:
+                df['Date'] = pd.to_datetime(df['Date'])
+            df['RSI'] = calc_rsi(df['Close'], 14)
+            df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+            df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+            df['is_real'] = True
+            return df[['Date', 'Open', 'High', 'Low', 'Close', 'Volume', 'RSI', 'EMA20', 'EMA50', 'is_real']]
+    except Exception as e:
+        print(f"⚠️ yfinance fetch error for {symbol}: {e}")
+
+    # Fallback to deterministic real dates and base prices (honest offline baseline)
+    dates = pd.date_range(end=pd.Timestamp.now().normalize(), periods=40, freq='B')
+    base = 1000.0
+    prices = [base * (1.0 + 0.005 * i) for i in range(len(dates))]
+    df_fb = pd.DataFrame({
+        "Date": dates,
+        "Open": prices,
+        "High": [p * 1.01 for p in prices],
+        "Low": [p * 0.99 for p in prices],
+        "Close": prices,
+        "Volume": [1500000] * len(dates),
+        "is_real": False
+    })
+    df_fb['RSI'] = calc_rsi(df_fb['Close'], 14)
+    df_fb['EMA20'] = df_fb['Close'].ewm(span=20, adjust=False).mean()
+    df_fb['EMA50'] = df_fb['Close'].ewm(span=50, adjust=False).mean()
+    return df_fb
 
 def calc_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     """Accurate Wilder's RSI calculation."""

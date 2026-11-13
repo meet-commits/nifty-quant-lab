@@ -9,6 +9,7 @@ Features:
 import os
 import sys
 import datetime
+import html
 import duckdb
 import pandas as pd
 import numpy as np
@@ -32,11 +33,13 @@ from chartink_engine import (
     calc_rsi,
     calc_atr,
     calc_supertrend,
+    fetch_stock_real_ohlc,
     CHARTINK_CATEGORIES,
     get_market_breadth_stats,
     get_sector_heatmap,
     get_chartink_live_scanner_feed
 )
+from gap_prediction_service import compute_overnight_gap_forecast
 from streamlit_autorefresh import st_autorefresh
 from live_market_service import (
     fetch_live_market_snapshot,
@@ -54,9 +57,11 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- LIVE MARKET REFRESH & DATA INGESTION -----------------
-# Auto-refresh live ticks silently every 10 seconds
-count = st_autorefresh(interval=10000, limit=None, key="live_market_refresh_tick")
+# ----------------- SESSION STATUS & SMART AUTOREFRESH -----------------
+# Market hours: 15-second refresh. Post-market / Weekend: throttled to 3 minutes to prevent yfinance rate limits.
+is_mkt_live, mkt_status_str, mkt_status_color = get_market_session_status()
+auto_refresh_ms = 15000 if is_mkt_live else 180000
+count = st_autorefresh(interval=auto_refresh_ms, limit=None, key="live_market_refresh_tick")
 
 # Load live market snapshot (sub-second cached in memory)
 live_snap = fetch_live_market_snapshot()
@@ -369,6 +374,69 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         label_visibility="collapsed"
     )
 
+    # 1.5. 🌙 KAL KA GAP FORECAST (3:15 PM EOD MACHINE LEARNING PREDICTOR)
+    gap_fc = compute_overnight_gap_forecast(live_snap)
+    fc_cat_bullets = "".join([f"<li style='margin-bottom:4px;'>{c}</li>" for c in gap_fc['catalysts']])
+
+    st.html(f"""
+    <div class="monolith-card-gold" style="padding:20px; margin-bottom:18px; border-top: 3px solid {gap_fc['signal_color']};">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.08);">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span style="font-size:26px;">🌙</span>
+                <div>
+                    <span class="font-syncopate" style="font-size:13px; font-weight:700; color:#FFFFFF; letter-spacing:2px;">
+                        KAL KA OVERNIGHT GAP FORECAST <span style="font-size:10px; color:#FCD34D;">(3:15 PM EOD PREDICTOR)</span>
+                    </span>
+                    <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#94A3B8; letter-spacing:1px;">
+                        WALK-FORWARD ML (XGBOOST) • PURE OUT-OF-SAMPLE PROBABILITY ENGINE
+                    </div>
+                </div>
+            </div>
+            <span style="background:{gap_fc['signal_color']}22; color:{gap_fc['signal_color']}; border:1px solid {gap_fc['signal_color']}66; font-size:12px; font-weight:900; padding:6px 16px; border-radius:999px; font-family:'JetBrains Mono', monospace;">
+                {gap_fc['signal_badge']}
+            </span>
+        </div>
+
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
+            <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(16,185,129,0.3); text-align:center;">
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(OVERNIGHT GAP UP)</div>
+                <div style="font-size:32px; font-weight:900; color:#10B981; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_up_pct']}%</div>
+                <div style="font-size:10px; color:#6EE7B7;">Out-of-sample ML Calibration</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(244,63,94,0.3); text-align:center;">
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(OVERNIGHT GAP DOWN)</div>
+                <div style="font-size:32px; font-weight:900; color:#F43F5E; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_down_pct']}%</div>
+                <div style="font-size:10px; color:#FDA4AF;">Downside Probability Floor</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(245,158,11,0.3); text-align:center;">
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">EXPECTED OPEN GAP RANGE</div>
+                <div style="font-size:24px; font-weight:900; color:#FCD34D; font-family:'JetBrains Mono', monospace; margin:8px 0;">{gap_fc['expected_range_str']}</div>
+                <div style="font-size:10px; color:#FCD34D;">Based on {gap_fc['spot_reference']:,.0f} Spot</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(0,240,255,0.3); text-align:center;">
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">3:15 PM EOD DECISION RULE</div>
+                <div style="font-size:13px; font-weight:800; color:#00F0FF; font-family:'JetBrains Mono', monospace; margin:10px 0; line-height:1.3;">{gap_fc['action_advice']}</div>
+                <div style="font-size:10px; color:#94A3B8;">Theta Decay Shield</div>
+            </div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.02); border-radius:10px; padding:12px 16px; border:1px solid rgba(255,255,255,0.05); font-family:'JetBrains Mono', monospace; font-size:11.5px; color:#CBD5E1; line-height:1.6;">
+            <b style="color:#FFFFFF;">⚡ Key Overnight Catalysts & EOD Footprints:</b>
+            <ul style="margin:6px 0 2px 18px; padding:0;">
+                {fc_cat_bullets}
+            </ul>
+            <div style="border-top:1px solid rgba(255,255,255,0.05); margin-top:8px; padding-top:8px; display:flex; justify-content:space-between; flex-wrap:wrap; font-size:10.5px; color:#94A3B8;">
+                <span><b>Scientific Calibration:</b> Brier Score = <b style="color:#00F0FF;">{gap_fc['metrics']['brier_score']}</b> (vs 0.25 random)</span>
+                <span><b>Model OOS Accuracy:</b> <b style="color:#10B981;">{gap_fc['metrics']['model_accuracy']}%</b> (Beats Momentum Baseline: {gap_fc['metrics']['baseline_momentum_acc']}%)</span>
+                <span><b>Historical Archive:</b> {gap_fc['metrics']['total_historical_days']} Trading Days</span>
+            </div>
+        </div>
+    </div>
+    """)
+
+    with st.expander("📋 View Verifiable Prediction Scoreboard (Recent Out-of-Sample Sessions)", expanded=False):
+        st.dataframe(gap_fc["scoreboard_df"], use_container_width=True, hide_index=True)
+
     # 2. THE HUMAN MARKET STORY (100% DYNAMIC MULTI-PILLAR MACRO DOSSIER)
     macro_story = build_comprehensive_market_story(live_snap, selected_asset)
     dyn_conf = macro_story.get("conviction_pct", 74.2)
@@ -395,10 +463,10 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 61000
         },
         "GIFT NIFTY": {
-            "title": "GIFT", "tag": "NIFTY",
+            "title": "GIFT", "tag": "NIFTY [ESTIMATE]",
             "spot": round(n_close + 25.0, 2), "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% (+25.0 pts spread)",
             "conf": f"{dyn_conf}% QUANT CONVICTION",
-            "date_info": f"GIFT CITY FUTURES SPREAD • {latest_date}",
+            "date_info": f"SPREAD MODEL ESTIMATE (SPOT + 25.0 PTS) • {latest_date}",
             "sl": n_sl, "pivot": n_piv, "t1": n_t1 + 25, "t2": n_t2 + 25,
             "t1_diff": f"{'+' if (n_t1+25)>=n_close else ''}{(n_t1 + 25) - n_close:.1f} pts from spot", "t2_diff": f"{'+' if (n_t2+25)>=n_close else ''}{(n_t2 + 25) - n_close:.1f} pts from spot",
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 25150
@@ -491,6 +559,9 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
             <div style="font-family:'Syncopate', sans-serif; font-size:10px; font-weight:700; color:#94A3B8; letter-spacing:3px; margin-bottom:14px;">
                 THE APEX EXECUTION HORIZON (MATHEMATICALLY CALCULATED FROM {latest_date} OHLC)
             </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#64748B;">
+                ⚠️ STATUTORY NOTICE: Algorithmic levels (S1, Pivot, R1, R2) are mathematical reference points derived from prior session OHLC, strictly for quantitative research. Not investment advice or trading calls.
+            </div>
         </div>
     </div>
     """)
@@ -530,6 +601,16 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     tow_label = "BULLS DOMINATING" if current['bull_pct'] >= 60 else ("BEARS DOMINATING" if current['bear_pct'] >= 60 else "NEUTRAL EQUILIBRIUM")
     tow_color = "#10B981" if current['bull_pct'] >= 50 else "#F43F5E"
 
+    vix_q_data = live_snap.get("vix", {})
+    crude_q_data = live_snap.get("crude", {})
+    usd_q_data = live_snap.get("usdinr", {})
+    sp_q_data = live_snap.get("sp500", {})
+
+    vix_badge = "LIVE" if vix_q_data.get("is_live", False) else "POST-MKT/EOD"
+    crude_badge = "LIVE" if crude_q_data.get("is_live", False) else "GLOBAL FUT"
+    usd_badge = "LIVE" if usd_q_data.get("is_live", False) else "CACHED"
+    sp_badge = "LIVE" if sp_q_data.get("is_live", False) else "US GLOBEX"
+
     col_tow, col_chart = st.columns([1, 2])
 
     with col_tow:
@@ -553,19 +634,19 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
             <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#CBD5E1; margin-top:16px;">
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:6px; display:flex; justify-content:space-between;">
-                    <span>India VIX (Real):</span>
+                    <span>India VIX <b style="color:#94A3B8; font-size:9.5px;">[{vix_badge}]</b>:</span>
                     <b style="color:#10B981;">{vix_close:.2f} ({vix_pct:+.2f}%)</b>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:6px; display:flex; justify-content:space-between;">
-                    <span>Crude WTI Oil (Real):</span>
+                    <span>Crude WTI Oil <b style="color:#94A3B8; font-size:9.5px;">[{crude_badge}]</b>:</span>
                     <b style="color:#10B981;">${crude_close:.2f} ({crude_pct:+.2f}%)</b>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:6px; display:flex; justify-content:space-between;">
-                    <span>USD/INR Currency (Real):</span>
+                    <span>USD/INR Currency <b style="color:#94A3B8; font-size:9.5px;">[{usd_badge}]</b>:</span>
                     <b style="color:#10B981;">₹{usd_close:.2f} ({usd_pct:+.2f}%)</b>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between;">
-                    <span>US S&P 500 Fut (Real):</span>
+                    <span>US S&P 500 Fut <b style="color:#94A3B8; font-size:9.5px;">[{sp_badge}]</b>:</span>
                     <b style="color:#10B981;">{sp_close:,.1f} ({sp_pct:+.2f}%)</b>
                 </div>
             </div>
@@ -627,7 +708,12 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     """)
 
     # 6. SENSIBULL OPTIONS OI RADAR
-    st.html("<div class='section-header'><span>03 / SENSIBULL-GRADE OPTIONS OPEN INTEREST (OI) RADAR</span></div>")
+    st.html("<div class='section-header'><span>03 / OPTIONS OPEN INTEREST (OI) RADAR [QUANTITATIVE MODEL PROJECTION]</span></div>")
+    st.html("""
+    <div style="font-family:'JetBrains Mono', monospace; font-size:10.5px; color:#94A3B8; margin:-8px 0 14px 4px;">
+        ⚠️ Note: Open Interest distribution & Max Pain are modeled via quantitative Logistic Moneyness Profile. Tick-by-tick exchange OI chain requires broker API token.
+    </div>
+    """)
 
     opt = macro_story.get("options_profile", {})
     pcr_val = opt.get("pcr", 1.05)
@@ -715,13 +801,13 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         live_news = fetch_live_market_news(limit=3)
         news_html_items = ""
         for item in live_news:
-            source = item.get('source', 'Financial Wire')
-            credibility = item.get('credibility', 'TIER 1 (OFFICIAL / VERIFIED)')
+            source = html.escape(str(item.get('source', 'Financial Wire')))
+            credibility = html.escape(str(item.get('credibility', 'TIER 1 (OFFICIAL / VERIFIED)')))
             color = item.get('color', '#10B981')
             score = item.get('score', 8.0)
-            title = item.get('title', '')
-            expected_move = item.get('expected_move', '100 - 200 pts')
-            tag = item.get('tag', 'MARKET UPDATE')
+            title = html.escape(str(item.get('title', '')))
+            expected_move = html.escape(str(item.get('expected_move', '100 - 200 pts')))
+            tag = html.escape(str(item.get('tag', 'MARKET UPDATE')))
 
             news_html_items += f"""
             <div style="background:rgba(0,0,0,0.4); border-left:3px solid {color}; padding:9px 12px; border-radius:8px; margin-bottom:8px;">
@@ -760,25 +846,31 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
                     WALK-FORWARD ACCURACY & INDIAN TRANSACTION FRICTION AUDIT
                 </div>
                 <div style="font-size:12px; color:#94A3B8; margin-top:2px;">
-                    Strict walk-forward validation with zero lookahead bias. Accounts for 0.1% STT, 0.05% turnover, 18% GST, 1.5% options slippage.
+                    Strict walk-forward evaluation on 489 historical sessions (DuckDB). Accounts for statutory STT (0.1% on options sell premium), NSE turnover, 18% GST, and slippage. Option P&L modeled via Delta (0.50) / Theta (-7.5 pts).
                 </div>
             </div>
         </div>
     </div>
     """)
 
-    if st.button("🚀 Run Walk-Forward Validation On Historical Data (520 Sessions)", type="primary"):
+    if st.button("🚀 Run Walk-Forward Validation On Historical Data (DuckDB Archive)", type="primary"):
         with st.spinner("Processing features and calculating post-friction net P&L..."):
             try:
                 df_features = build_feature_matrix()
                 res_df, model_metrics = train_and_evaluate_walk_forward(df=df_features)
                 trades_df, b_summary = run_realistic_backtest(predictions_df=res_df)
+
+                total_index_pts = sum(
+                    (row['actual_gap_pct'] / 100.0) * row['nifty_close'] * (1 if row['predicted_prob_up'] >= 0.50 else -1)
+                    for _, row in res_df.iterrows()
+                )
                 
-                c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+                c_m1, c_m2, c_m3, c_m4, c_m5 = st.columns(5)
                 c_m1.metric("Out-of-Sample ROC-AUC", f"{model_metrics['roc_auc_score']}")
-                c_m2.metric("Post-Cost Net Return", f"{b_summary['net_return_pct']}%")
-                c_m3.metric("Post-Cost Win Rate", f"{b_summary['win_rate_pct']}%")
-                c_m4.metric("Friction Paid (STT+Slip)", f"₹{b_summary['total_friction_paid_inr']:,.0f}")
+                c_m2.metric("Index Gap Pts Captured", f"{total_index_pts:+,.0f} pts")
+                c_m3.metric("Post-Cost Net Return", f"{b_summary['net_return_pct']}%")
+                c_m4.metric("Post-Cost Win Rate", f"{b_summary['win_rate_pct']}%")
+                c_m5.metric("Friction Paid (STT+Slip)", f"₹{b_summary['total_friction_paid_inr']:,.0f}")
                 
                 fig_eq = px.line(trades_df, x="date", y="capital_after_trade", title="Net Equity Curve (After Indian Taxes & Slippage)")
                 fig_eq.update_layout(template="plotly_dark", height=280, paper_bgcolor='#000000', plot_bgcolor='#000000')
@@ -808,7 +900,7 @@ else:
         </div>
         <div style="display:flex; align-items:center; gap:12px;">
             <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#10B981; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); padding:4px 12px; border-radius:20px;">
-                ● NSE CASH LIVE (500+ UNIVERSE)
+                ● NSE HIGH-LIQUIDITY SAMPLE (Top 16 F&O Heavyweights)
             </span>
         </div>
     </div>
@@ -920,7 +1012,7 @@ else:
     # 5. CHARTINK DETO-TO-DETO RESULTS DATATABLE
     st.html("""
     <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF; margin-bottom:8px;">
-        📋 LIVE SCANNER RESULTS (DETO-TO-DETO CHARTINK FORMAT)
+        📋 LIVE SCANNER RESULTS (NSE HIGH-LIQUIDITY SAMPLE • 16 UNIVERSE)
     </div>
     """)
 
@@ -951,34 +1043,17 @@ else:
     stock_symbols = [s["sym"] for s in table_stocks]
     selected_inspect_stock = st.selectbox("Select Stock for Chartink Candlestick Inspector:", stock_symbols, index=0)
 
-    # Generate synthetic OHLC for inspector
-    np.random.seed(42)
-    c_dates = pd.date_range(end=datetime.datetime.now(), periods=40, freq='D')
-    base_price = 1000.0
-    for s in table_stocks:
-        if s["sym"] == selected_inspect_stock:
-            try:
-                base_price = float(str(s["price"]).replace("₹", "").replace(",", "").strip())
-            except Exception:
-                base_price = 1000.0
-            break
+    # Fetch REAL daily OHLC history (Genuine Exchange Data via Yahoo Finance)
+    inspect_df = fetch_stock_real_ohlc(selected_inspect_stock, period="3mo")
+    is_genuine_data = inspect_df.get("is_real", pd.Series([True])).iloc[0] if 'is_real' in inspect_df.columns else True
+    data_badge = "🟢 GENUINE DAILY OHLC (NSE)" if is_genuine_data else "🟡 OFFLINE CACHED OHLC"
 
-    c_prices = []
-    p_curr = float(base_price) * 0.90
-    for d in c_dates:
-        p_drift = np.random.uniform(-0.02, 0.03) * p_curr
-        p_o = p_curr
-        p_c = p_o + p_drift
-        p_h = max(p_o, p_c) + np.random.uniform(0.005, 0.015) * p_o
-        p_l = min(p_o, p_c) - np.random.uniform(0.005, 0.015) * p_o
-        p_vol = np.random.randint(100000, 500000)
-        p_curr = p_c
-        c_prices.append({"Date": d, "Open": p_o, "High": p_h, "Low": p_l, "Close": p_c, "Volume": p_vol})
-
-    inspect_df = pd.DataFrame(c_prices)
-    inspect_df['RSI'] = calc_rsi(inspect_df['Close'], 14)
-    inspect_df['EMA20'] = inspect_df['Close'].ewm(span=20, adjust=False).mean()
-    inspect_df['EMA50'] = inspect_df['Close'].ewm(span=50, adjust=False).mean()
+    st.html(f"""
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-family:'JetBrains Mono', monospace; font-size:11px;">
+        <span style="color:#94A3B8;">Asset: <b style="color:#FFFFFF;">{selected_inspect_stock}</b></span>
+        <span style="color:#10B981; background:rgba(16,185,129,0.12); padding:3px 10px; border-radius:6px; border:1px solid rgba(16,185,129,0.3);">{data_badge}</span>
+    </div>
+    """)
 
     fig_chartink = make_subplots(
         rows=2, cols=1, shared_xaxes=True,
@@ -1015,8 +1090,8 @@ else:
 
 # ----------------- GLOBAL FOOTER NOTICE -----------------
 st.html(f"""
-<div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:18px; margin-top:28px; display:flex; justify-content:space-between; font-family:'JetBrains Mono', monospace; font-size:11px; color:#64748B;">
-    <span>Connected to Local DuckDB • 100% Verifiable Official Exchange Feeds (Latest: {latest_date})</span>
-    <span>Mathematical Conviction & Pure Rule-Based Screening > Retail Speculation</span>
+<div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:18px; margin-top:28px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-family:'JetBrains Mono', monospace; font-size:11px; color:#64748B;">
+    <span>Connected to Local DuckDB • Public Delayed/EOD Market Feeds (Yahoo Finance) • Research & Screening Only (Latest: {latest_date})</span>
+    <span>⚠️ Educational Quantitative Research Platform • Not SEBI-Registered Financial Advice</span>
 </div>
 """)

@@ -120,7 +120,11 @@ def _fetch_single_quote(sym: str) -> Tuple[str, Dict[str, Any]]:
     try:
         t = yf.Ticker(sym)
         fi = t.fast_info
-        last_price = float(getattr(fi, 'last_price', 0.0) or 0.0)
+        raw_last = getattr(fi, 'last_price', 0.0)
+        last_price = float(raw_last or 0.0)
+        is_live = (last_price > 0.0)
+        source = "LIVE_YFINANCE" if is_live else "CACHED_BASELINE"
+
         prev_close = float(getattr(fi, 'previous_close', 0.0) or last_price or 1.0)
         open_p = float(getattr(fi, 'open', last_price) or last_price)
         high_p = float(getattr(fi, 'day_high', last_price) or last_price)
@@ -133,6 +137,8 @@ def _fetch_single_quote(sym: str) -> Tuple[str, Dict[str, Any]]:
             open_p = db["open"]
             high_p = db["high"]
             low_p = db["low"]
+            is_live = False
+            source = "CACHED_BASELINE"
 
         if prev_close and prev_close > 0:
             chg_pts = last_price - prev_close
@@ -151,7 +157,9 @@ def _fetch_single_quote(sym: str) -> Tuple[str, Dict[str, Any]]:
             "chg_pct": round(chg_pct, 2),
             "chg_str": f"{'+' if chg_pts >= 0 else ''}{chg_pts:.2f}",
             "pct_str": f"{'+' if chg_pct >= 0 else ''}{chg_pct:.2f}%",
-            "bull": chg_pts >= 0
+            "bull": chg_pts >= 0,
+            "is_live": is_live,
+            "source": source
         }
     except Exception:
         db = DEFAULT_BASES.get(sym, {"last": 100.0, "prev": 100.0, "open": 100.0, "high": 100.0, "low": 100.0})
@@ -161,7 +169,9 @@ def _fetch_single_quote(sym: str) -> Tuple[str, Dict[str, Any]]:
             "last": db["last"], "prev": db["prev"], "open": db["open"], "high": db["high"], "low": db["low"],
             "chg_pts": round(chg_pts, 2), "chg_pct": round(chg_pct, 2),
             "chg_str": f"{'+' if chg_pts >= 0 else ''}{chg_pts:.2f}",
-            "pct_str": f"{'+' if chg_pct >= 0 else ''}{chg_pct:.2f}%", "bull": chg_pts >= 0
+            "pct_str": f"{'+' if chg_pct >= 0 else ''}{chg_pct:.2f}%", "bull": chg_pts >= 0,
+            "is_live": False,
+            "source": "CACHED_BASELINE"
         }
 
 def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
@@ -258,7 +268,10 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
             "vix": quote_map.get("^INDIAVIX", {}),
             "crude": quote_map.get("CL=F", {}),
             "usdinr": quote_map.get("USDINR=X", {}),
-            "sp500": quote_map.get("ES=F", {})
+            "sp500": quote_map.get("ES=F", {}),
+            "is_feed_live": sum(1 for q in quote_map.values() if q.get("is_live", False)) >= 3,
+            "live_count": sum(1 for q in quote_map.values() if q.get("is_live", False)),
+            "total_tickers": len(quote_map)
         }
 
         _CACHE["snapshot"] = snapshot
