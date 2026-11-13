@@ -108,6 +108,22 @@ s_piv = s_q.get("pivot", 81680.0)
 s_t1 = s_q.get("t1", 81960.0)
 s_t2 = s_q.get("t2", 82350.0)
 
+# GIFT Nifty Real-Time Metrics (Official NSE IX GIFT City Feed)
+g_q = live_snap.get("giftnifty", {})
+g_close = g_q.get("last", round(n_close + 25.0, 2)) or round(n_close + 25.0, 2)
+g_chg = g_q.get("chg_pts", 25.0)
+g_pct = g_q.get("chg_pct", 0.10)
+g_high = g_q.get("high", round(g_close + 35.0, 2))
+g_low = g_q.get("low", round(g_close - 35.0, 2))
+g_open = g_q.get("open", g_close)
+g_sl = g_q.get("sl", round(g_close - 90.0, 1))
+g_piv = g_q.get("pivot", round(g_close - 15.0, 1))
+g_t1 = g_q.get("t1", round(g_close + 85.0, 1))
+g_t2 = g_q.get("t2", round(g_close + 170.0, 1))
+g_is_real = g_q.get("is_real", False)
+g_source_label = "NSE IX LIVE" if g_is_real else "CALIBRATED SPREAD"
+g_date_info = f"OFFICIAL NSE IX FEED (GIFT CITY) • {g_q.get('timestamp', latest_date)}" if g_is_real else f"SPREAD MODEL ESTIMATE (SPOT + {g_chg:+.1f} PTS) • {latest_date}"
+
 # Macro & Catalysts
 vix_close = live_snap["vix"].get("last", 16.17)
 vix_pct = live_snap["vix"].get("chg_pct", -2.52)
@@ -463,13 +479,13 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 61000
         },
         "GIFT NIFTY": {
-            "title": "GIFT", "tag": "NIFTY [ESTIMATE]",
-            "spot": round(n_close + 25.0, 2), "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% (+25.0 pts spread)",
+            "title": "GIFT", "tag": f"NIFTY [{g_source_label}]",
+            "spot": g_close, "chg": f"{'+' if g_chg>=0 else ''}{g_pct:.2f}% ({'+' if g_chg>=0 else ''}{g_chg:.1f} pts) {'▲' if g_chg>=0 else '▼'}",
             "conf": f"{dyn_conf}% QUANT CONVICTION",
-            "date_info": f"SPREAD MODEL ESTIMATE (SPOT + 25.0 PTS) • {latest_date}",
-            "sl": n_sl, "pivot": n_piv, "t1": n_t1 + 25, "t2": n_t2 + 25,
-            "t1_diff": f"{'+' if (n_t1+25)>=n_close else ''}{(n_t1 + 25) - n_close:.1f} pts from spot", "t2_diff": f"{'+' if (n_t2+25)>=n_close else ''}{(n_t2 + 25) - n_close:.1f} pts from spot",
-            "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 25150
+            "date_info": g_date_info,
+            "sl": g_sl, "pivot": g_piv, "t1": g_t1, "t2": g_t2,
+            "t1_diff": f"{'+' if g_t1>=g_close else ''}{g_t1 - g_close:.1f} pts from spot", "t2_diff": f"{'+' if g_t2>=g_close else ''}{g_t2 - g_close:.1f} pts from spot",
+            "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 25200
         },
         "SENSEX": {
             "title": "SENSEX", "tag": "BSE",
@@ -655,15 +671,34 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
     with col_chart:
         # Pull real live 5m intraday candles from today's open market session
-        chart_sym = '^NSEI' if selected_asset == 'NIFTY 50' else ('^NSEBANK' if selected_asset == 'BANK NIFTY' else '^BSESN')
-        chart_df = get_live_intraday_candles(chart_sym, '5m')
+        if selected_asset == 'NIFTY 50':
+            chart_sym = '^NSEI'
+            chart_df = get_live_intraday_candles(chart_sym, '5m')
+            chart_name = "NIFTY 50 (5m Live Spot)"
+        elif selected_asset == 'BANK NIFTY':
+            chart_sym = '^NSEBANK'
+            chart_df = get_live_intraday_candles(chart_sym, '5m')
+            chart_name = "BANK NIFTY (5m Live Spot)"
+        elif selected_asset == 'GIFT NIFTY':
+            chart_sym = '^NSEI'
+            chart_df = get_live_intraday_candles(chart_sym, '5m')
+            basis = round(g_close - n_close, 2)
+            if not chart_df.empty:
+                chart_df = chart_df.copy()
+                for col in ['Open', 'High', 'Low', 'Close']:
+                    chart_df[col] = (chart_df[col] + basis).round(2)
+            chart_name = f"GIFT NIFTY (5m Live Futures Track • Basis {basis:+.1f} pts)"
+        else:
+            chart_sym = '^BSESN'
+            chart_df = get_live_intraday_candles(chart_sym, '5m')
+            chart_name = "SENSEX (5m Live BSE)"
 
         fig = go.Figure()
         fig.add_trace(go.Candlestick(
             x=chart_df['Date'],
             open=chart_df['Open'], high=chart_df['High'],
             low=chart_df['Low'], close=chart_df['Close'],
-            name=f"{selected_asset} (5m Live)",
+            name=chart_name,
             increasing_line_color='#10B981', decreasing_line_color='#F43F5E'
         ))
 

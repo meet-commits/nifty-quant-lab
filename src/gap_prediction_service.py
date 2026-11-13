@@ -239,3 +239,4 @@ if __name__ == "__main__":
     print("Expected Range:", fc["expected_range_str"])
     print("Brier Score:", fc["metrics"]["brier_score"])
     print("Scoreboard preview:\n", fc["scoreboard_df"].head(3))
+
