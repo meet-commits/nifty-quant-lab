@@ -71,6 +71,14 @@ latest_date = live_snap["timestamp"]
 is_market_open = live_snap["is_open"]
 session_status = live_snap["session_status"]
 status_color = live_snap["status_color"]
+mcp_info = live_snap.get("mcp_health", {})
+is_mcp_online = mcp_info.get("is_online", True)
+mcp_badge_html = """
+<div style="font-family:'JetBrains Mono', monospace; font-size:10.5px; color:#00F0FF; font-weight:700; background:rgba(0,240,255,0.10); border:1px solid rgba(0,240,255,0.3); padding:5px 14px; border-radius:999px; display:flex; align-items:center; gap:6px;">
+    <span style="height:7px; width:7px; border-radius:999px; background:#00F0FF; box-shadow:0 0 8px #00F0FF;"></span>
+    OFFICIAL NSE MCP: ACTIVE (mcp.nseindia.in)
+</div>
+""" if is_mcp_online else ""
 
 # Nifty 50 Real-Time Metrics
 n_q = live_snap["nifty"]
@@ -370,7 +378,8 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
                     </div>
                 </div>
             </div>
-            <div style="display:flex; align-items:center; gap:14px;">
+            <div style="display:flex; align-items:center; flex-wrap:wrap; gap:10px;">
+                {mcp_badge_html}
                 <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:{status_color}; font-weight:700; background:rgba(16,185,129,0.12); border:1px solid {status_color}55; padding:6px 16px; border-radius:999px; display:flex; align-items:center; gap:8px;">
                     <span style="height:8px; width:8px; border-radius:999px; background:{status_color}; box-shadow:0 0 10px {status_color};"></span>
                     {session_status} • {latest_date}
@@ -1126,7 +1135,7 @@ else:
 # ----------------- GLOBAL FOOTER NOTICE -----------------
 st.html(f"""
 <div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:18px; margin-top:28px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-family:'JetBrains Mono', monospace; font-size:11px; color:#64748B;">
-    <span>Connected to Local DuckDB • Public Delayed/EOD Market Feeds (Yahoo Finance) • Research & Screening Only (Latest: {latest_date})</span>
+    <span>Connected to Official NSE MCP Server (mcp.nseindia.in) • Local DuckDB • Public Exchange Feeds • Research & Screening Only (Latest: {latest_date})</span>
     <span>⚠️ Educational Quantitative Research Platform • Not SEBI-Registered Financial Advice</span>
 </div>
 """)

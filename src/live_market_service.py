@@ -14,6 +14,15 @@ import yfinance as yf
 import requests
 from typing import Dict, List, Tuple, Any
 
+try:
+    from nse_mcp_client import check_nse_mcp_health, fetch_nse_mcp_stock_quote
+except ImportError:
+    try:
+        from src.nse_mcp_client import check_nse_mcp_health, fetch_nse_mcp_stock_quote
+    except Exception:
+        check_nse_mcp_health = lambda: {"is_online": False}
+        fetch_nse_mcp_stock_quote = lambda sym: None
+
 # Local DuckDB path
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
@@ -237,6 +246,17 @@ def _fetch_single_quote(sym: str) -> Tuple[str, Dict[str, Any]]:
         high_p = float(getattr(fi, 'day_high', last_price) or last_price)
         low_p = float(getattr(fi, 'day_low', last_price) or last_price)
 
+        if last_price <= 0.0 and sym.endswith(".NS"):
+            mcp_quote = fetch_nse_mcp_stock_quote(sym)
+            if mcp_quote and mcp_quote.get("last", 0.0) > 0:
+                last_price = mcp_quote["last"]
+                prev_close = mcp_quote["prev"]
+                open_p = mcp_quote["open"]
+                high_p = mcp_quote["high"]
+                low_p = mcp_quote["low"]
+                is_live = True
+                source = "OFFICIAL_NSE_MCP_SERVER"
+
         if last_price <= 0.0 and sym in DEFAULT_BASES:
             db = DEFAULT_BASES[sym]
             last_price = db["last"]
@@ -361,6 +381,7 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
             "is_open": is_open,
             "session_status": session_status,
             "status_color": status_color,
+            "mcp_health": check_nse_mcp_health(),
             "quote_map": quote_map,
             "heavyweights": heavyweights_data,
             "chartink_live_quotes": chartink_live_quotes,
