@@ -10,9 +10,13 @@ __pycache__/
 
 # Data & Database files
 data/*.duckdb
+data/*.duckdb.wal
+data/*.wal
 data/*.parquet
 data/*.csv
 *.duckdb
+*.duckdb.wal
+*.wal
 *.parquet
 
 # Secrets & Local Config

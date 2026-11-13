@@ -327,52 +327,10 @@ suite_view = st.radio(
 )
 
 # =========================================================================
+# =========================================================================
 # MODE 1: 👑 APEX LUXURY COCKPIT (100% PRESERVED & COMPLETE)
 # =========================================================================
 if suite_view == "👑 APEX LUXURY COCKPIT":
-    INDEX_DATA = {
-        "NIFTY 50": {
-            "title": "NIFTY", "tag": "50",
-            "spot": n_close, "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% ({'+' if n_chg>=0 else ''}{n_chg:.1f} pts) {'▲' if n_chg>=0 else '▼'}",
-            "conf": "78% STATISTICAL CONVICTION",
-            "date_info": f"{session_status} • {latest_date}",
-            "story": generate_live_market_story(live_snap),
-            "sl": n_sl, "pivot": n_piv, "t1": n_t1, "t2": n_t2,
-            "t1_diff": f"{'+' if n_t1>=n_close else ''}{n_t1 - n_close:.1f} pts from spot", "t2_diff": f"{'+' if n_t2>=n_close else ''}{n_t2 - n_close:.1f} pts from spot",
-            "bull_pct": 54 if n_chg>=0 else 46, "bear_pct": 46 if n_chg>=0 else 54, "base": 25000
-        },
-        "BANK NIFTY": {
-            "title": "BANK", "tag": "NIFTY",
-            "spot": b_close, "chg": f"{'+' if b_chg>=0 else ''}{b_pct:.2f}% ({'+' if b_chg>=0 else ''}{b_chg:.1f} pts) {'▲' if b_chg>=0 else '▼'}",
-            "conf": "83% STATISTICAL CONVICTION",
-            "date_info": f"{session_status} • {latest_date}",
-            "story": f"<b>Banking Index currently {b_close:,.2f} par trade kar raha hai ({b_pct:+.2f}%).</b><br>HDFC Bank aur ICICI Bank intraday consolidation zone mein hain. Structural floor stop loss <b>{b_sl:,.1f}</b> ke neeche valid hai jabki agla resistance target <b>{b_t1:,.1f}</b> par placed hai.",
-            "sl": b_sl, "pivot": b_piv, "t1": b_t1, "t2": b_t2,
-            "t1_diff": f"{'+' if b_t1>=b_close else ''}{b_t1 - b_close:.1f} pts from spot", "t2_diff": f"{'+' if b_t2>=b_close else ''}{b_t2 - b_close:.1f} pts from spot",
-            "bull_pct": 55 if b_chg>=0 else 45, "bear_pct": 45 if b_chg>=0 else 55, "base": 61000
-        },
-        "GIFT NIFTY": {
-            "title": "GIFT", "tag": "NIFTY",
-            "spot": round(n_close + 25.0, 2), "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% (+25.0 pts spread)",
-            "conf": "79% STATISTICAL CONVICTION",
-            "date_info": f"GIFT CITY FUTURES SPREAD • {latest_date}",
-            "story": f"<b>GIFT Nifty futures spot ke muqable +25 points ke premium par quote kar raha hai.</b><br>Market currently live open trading session mein active hai. Pivot floor <b>{n_piv:,.1f}</b> ko intraday buyers launching pad ki tarah watch kar rahe hain.",
-            "sl": n_sl, "pivot": n_piv, "t1": n_t1 + 25, "t2": n_t2 + 25,
-            "t1_diff": f"{'+' if (n_t1+25)>=n_close else ''}{(n_t1 + 25) - n_close:.1f} pts from spot", "t2_diff": f"{'+' if (n_t2+25)>=n_close else ''}{(n_t2 + 25) - n_close:.1f} pts from spot",
-            "bull_pct": 53 if n_chg>=0 else 47, "bear_pct": 47 if n_chg>=0 else 53, "base": 25150
-        },
-        "SENSEX": {
-            "title": "SENSEX", "tag": "BSE",
-            "spot": s_close, "chg": f"{'+' if s_chg>=0 else ''}{s_pct:.2f}% ({'+' if s_chg>=0 else ''}{s_chg:.1f} pts) {'▲' if s_chg>=0 else '▼'}",
-            "conf": "75% STATISTICAL CONVICTION",
-            "date_info": f"{session_status} • {latest_date}",
-            "story": f"<b>Sensex {s_close:,.2f} par live trade kar raha hai ({s_pct:+.2f}%).</b><br>Reliance Industries support provide kar raha hai jabki IT heavyweights mein profit booking dikh rahi hai. Structural floor <b>{s_sl:,.1f}</b> par majboot hai.",
-            "sl": s_sl, "pivot": s_piv, "t1": s_t1, "t2": s_t2,
-            "t1_diff": f"{'+' if s_t1>=s_close else ''}{s_t1 - s_close:.1f} pts from spot", "t2_diff": f"{'+' if s_t2>=s_close else ''}{s_t2 - s_close:.1f} pts from spot",
-            "bull_pct": 50 if s_chg>=0 else 50, "bear_pct": 50 if s_chg>=0 else 50, "base": 81600
-        }
-    }
-
     # 1. TOP STATUS BAR WITH LIVE TICK INDICATOR
     c_bar_l, c_bar_r = st.columns([3, 1])
     with c_bar_l:
@@ -411,10 +369,49 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         label_visibility="collapsed"
     )
 
-    current = INDEX_DATA[selected_asset]
-
-    # 2. THE HUMAN MARKET STORY (DEEP MULTI-PILLAR MACRO DOSSIER)
+    # 2. THE HUMAN MARKET STORY (100% DYNAMIC MULTI-PILLAR MACRO DOSSIER)
     macro_story = build_comprehensive_market_story(live_snap, selected_asset)
+
+    INDEX_DATA = {
+        "NIFTY 50": {
+            "title": "NIFTY", "tag": "50",
+            "spot": n_close, "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% ({'+' if n_chg>=0 else ''}{n_chg:.1f} pts) {'▲' if n_chg>=0 else '▼'}",
+            "conf": f"{macro_story['conviction_pct']}% QUANT CONVICTION",
+            "date_info": f"{session_status} • {latest_date}",
+            "sl": n_sl, "pivot": n_piv, "t1": n_t1, "t2": n_t2,
+            "t1_diff": f"{'+' if n_t1>=n_close else ''}{n_t1 - n_close:.1f} pts from spot", "t2_diff": f"{'+' if n_t2>=n_close else ''}{n_t2 - n_close:.1f} pts from spot",
+            "bull_pct": macro_story["bull_pct"], "bear_pct": macro_story["bear_pct"], "base": 25000
+        },
+        "BANK NIFTY": {
+            "title": "BANK", "tag": "NIFTY",
+            "spot": b_close, "chg": f"{'+' if b_chg>=0 else ''}{b_pct:.2f}% ({'+' if b_chg>=0 else ''}{b_chg:.1f} pts) {'▲' if b_chg>=0 else '▼'}",
+            "conf": f"{macro_story['conviction_pct']}% QUANT CONVICTION",
+            "date_info": f"{session_status} • {latest_date}",
+            "sl": b_sl, "pivot": b_piv, "t1": b_t1, "t2": b_t2,
+            "t1_diff": f"{'+' if b_t1>=b_close else ''}{b_t1 - b_close:.1f} pts from spot", "t2_diff": f"{'+' if b_t2>=b_close else ''}{b_t2 - b_close:.1f} pts from spot",
+            "bull_pct": macro_story["bull_pct"], "bear_pct": macro_story["bear_pct"], "base": 61000
+        },
+        "GIFT NIFTY": {
+            "title": "GIFT", "tag": "NIFTY",
+            "spot": round(n_close + 25.0, 2), "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% (+25.0 pts spread)",
+            "conf": f"{macro_story['conviction_pct']}% QUANT CONVICTION",
+            "date_info": f"GIFT CITY FUTURES SPREAD • {latest_date}",
+            "sl": n_sl, "pivot": n_piv, "t1": n_t1 + 25, "t2": n_t2 + 25,
+            "t1_diff": f"{'+' if (n_t1+25)>=n_close else ''}{(n_t1 + 25) - n_close:.1f} pts from spot", "t2_diff": f"{'+' if (n_t2+25)>=n_close else ''}{(n_t2 + 25) - n_close:.1f} pts from spot",
+            "bull_pct": macro_story["bull_pct"], "bear_pct": macro_story["bear_pct"], "base": 25150
+        },
+        "SENSEX": {
+            "title": "SENSEX", "tag": "BSE",
+            "spot": s_close, "chg": f"{'+' if s_chg>=0 else ''}{s_pct:.2f}% ({'+' if s_chg>=0 else ''}{s_chg:.1f} pts) {'▲' if s_chg>=0 else '▼'}",
+            "conf": f"{macro_story['conviction_pct']}% QUANT CONVICTION",
+            "date_info": f"{session_status} • {latest_date}",
+            "sl": s_sl, "pivot": s_piv, "t1": s_t1, "t2": s_t2,
+            "t1_diff": f"{'+' if s_t1>=s_close else ''}{s_t1 - s_close:.1f} pts from spot", "t2_diff": f"{'+' if s_t2>=s_close else ''}{s_t2 - s_close:.1f} pts from spot",
+            "bull_pct": macro_story["bull_pct"], "bear_pct": macro_story["bear_pct"], "base": 81600
+        }
+    }
+
+    current = INDEX_DATA[selected_asset]
 
     st.html(f"""
     <div class="monolith-card" style="border-left: 4px solid {macro_story['regime_color']}; padding:20px; margin-bottom:20px;">
@@ -527,6 +524,9 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     # 4. INTRADAY RADAR & LIVE CHART
     st.html("<div class='section-header'><span>01 / INTRADAY CONVERGENCE & LIVE CHART</span></div>")
 
+    tow_label = "BULLS DOMINATING" if current['bull_pct'] >= 60 else ("BEARS DOMINATING" if current['bear_pct'] >= 60 else "NEUTRAL EQUILIBRIUM")
+    tow_color = "#10B981" if current['bull_pct'] >= 50 else "#F43F5E"
+
     col_tow, col_chart = st.columns([1, 2])
 
     with col_tow:
@@ -534,7 +534,7 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         <div class="monolith-card" style="height:100%;">
             <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.06);">
                 <span class="font-syncopate" style="font-size:11px; font-weight:700; color:#FFFFFF;">⚔️ Tug-of-War Radar</span>
-                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:#10B981;">BULLS LEADING</span>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:{tow_color};">{tow_label}</span>
             </div>
             
             <div style="margin:16px 0 12px 0;">
@@ -626,24 +626,25 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     # 6. SENSIBULL OPTIONS OI RADAR
     st.html("<div class='section-header'><span>03 / SENSIBULL-GRADE OPTIONS OPEN INTEREST (OI) RADAR</span></div>")
 
+    opt = macro_story["options_profile"]
     col_pcr, col_oi_bars = st.columns([1, 2])
 
     with col_pcr:
-        st.html("""
+        st.html(f"""
         <div class="monolith-card" style="text-align:center; padding:22px;">
             <span style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#94A3B8; font-weight:800; text-transform:uppercase;">PUT-CALL RATIO (PCR)</span>
-            <div style="font-family:'JetBrains Mono', monospace; font-size:42px; font-weight:900; color:#10B981; margin:6px 0;">1.28</div>
-            <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:#6EE7B7; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); padding:4px 12px; border-radius:8px; display:inline-block; margin-bottom:16px;">
-                Heavy Put Writing Floor (Bullish Bias)
+            <div style="font-family:'JetBrains Mono', monospace; font-size:42px; font-weight:900; color:{opt['pcr_color']}; margin:6px 0;">{opt['pcr']}</div>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:{opt['pcr_color']}; background:{opt['pcr_color']}22; border:1px solid {opt['pcr_color']}55; padding:4px 12px; border-radius:8px; display:inline-block; margin-bottom:16px;">
+                {opt['pcr_regime']}
             </span>
             <div style="border-top:1px solid rgba(255,255,255,0.06); padding-top:14px; font-family:'JetBrains Mono', monospace; font-size:12px;">
                 <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-                    <span style="color:#94A3B8;">Max Pain Strike:</span>
-                    <b style="color:#F59E0B;">25,000</b>
+                    <span style="color:#94A3B8;">Dynamic Max Pain:</span>
+                    <b style="color:#F59E0B;">{opt['max_pain_strike']:,}</b>
                 </div>
                 <div style="display:flex; justify-content:space-between;">
                     <span style="color:#94A3B8;">ATM Straddle IV:</span>
-                    <b style="color:#00F0FF;">14.2% (IV Compressed)</b>
+                    <b style="color:#00F0FF;">{opt['atm_straddle_iv']}% (Dynamic)</b>
                 </div>
             </div>
         </div>
@@ -651,9 +652,9 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
     with col_oi_bars:
         oi_data = pd.DataFrame({
-            "Strike": [24800, 24900, 25000, 25100, 25200, 25300],
-            "Put_OI_Support": [92, 85, 74, 51, 28, 15],
-            "Call_OI_Resistance": [18, 32, 58, 76, 89, 95]
+            "Strike": [f"{s:,}" for s in opt["strikes"]],
+            "Put_OI_Support": opt["put_oi"],
+            "Call_OI_Resistance": opt["call_oi"]
         })
         fig_oi = go.Figure()
         fig_oi.add_trace(go.Bar(x=oi_data['Strike'], y=oi_data['Put_OI_Support'], name='Put Support (Lakhs)', marker_color='#10B981'))

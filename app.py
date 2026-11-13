@@ -22,3 +22,4 @@ with open(dashboard_file, "r", encoding="utf-8") as f:
     app_code = f.read()
 
 exec(compile(app_code, dashboard_file, "exec"), globals())
+
