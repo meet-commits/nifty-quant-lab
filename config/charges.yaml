@@ -26,3 +26,4 @@ equity_options:
 # Risk-Free Interest Rate for Black-Scholes Option Pricing
 # RBI 91-day Treasury Bill yield benchmark
 risk_free_rate: 0.065
+

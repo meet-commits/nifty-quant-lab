@@ -18,8 +18,10 @@ data/*.csv
 *.wal
 *.csv
 
-# Allow seed archive for cloud deployment
+# Allow seed archive & config CSVs for cloud deployment
 !data/market_data.parquet
+!data/production_suite.joblib
+!config/*.csv
 
 # Secrets & Local Config
 .env

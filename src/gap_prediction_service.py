@@ -35,14 +35,26 @@ IST = ZoneInfo("Asia/Kolkata")
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 PREDICTIONS_LOG_PATH = os.path.join(DATA_DIR, "predictions_log.parquet")
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
+MARKET_DATA_PATH = os.path.join(DATA_DIR, "market_data.parquet")
+SUITE_CACHE_PATH = os.path.join(DATA_DIR, "production_suite.joblib")
 
 
 @cache_resource_decorator
 def get_cached_production_suite() -> Dict[str, Any]:
     """
-    Trains expanding-window walk-forward evaluation (for benchmarks) and refits
-    final production models on 100% of historical data. Cached for 24 hours.
+    Loads pre-trained production model suite from disk if valid;
+    otherwise trains expanding-window walk-forward evaluation and saves to disk.
     """
+    if os.path.exists(SUITE_CACHE_PATH):
+        try:
+            mtime_cache = os.path.getmtime(SUITE_CACHE_PATH)
+            mtime_data = os.path.getmtime(MARKET_DATA_PATH) if os.path.exists(MARKET_DATA_PATH) else 0.0
+            if mtime_cache >= mtime_data:
+                import joblib
+                return joblib.load(SUITE_CACHE_PATH)
+        except Exception as e:
+            print(f"⚠️ Cache read error, retraining: {e}")
+
     print("🧠 Initializing Production Gap Prediction Suite (Expanding Walk-Forward & Full Refit)...")
     df = build_feature_matrix()
 
@@ -81,13 +93,21 @@ def get_cached_production_suite() -> Dict[str, Any]:
 
     backtest_scoreboard_df = pd.DataFrame(backtest_rows).iloc[::-1]
 
-    return {
+    suite = {
         "metrics": metrics,
         "walkforward_df": res_df,
         "backtest_scoreboard_df": backtest_scoreboard_df,
         "prod_eod": prod_eod,
         "prod_preopen": prod_preopen
     }
+
+    try:
+        import joblib
+        joblib.dump(suite, SUITE_CACHE_PATH)
+    except Exception as e:
+        print(f"⚠️ Could not persist suite to disk: {e}")
+
+    return suite
 
 
 def update_forward_test_outcomes() -> pd.DataFrame:

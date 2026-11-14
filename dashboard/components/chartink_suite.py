@@ -1,0 +1,333 @@
+"""
+dashboard/components/chartink_suite.py
+Chartink Scanner and Event Audit components.
+Uses st.column_config for native sorting/formatting and escapes external strings.
+"""
+
+import html
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from typing import Dict, Any
+
+from event_calendar import get_high_impact_events
+from news_service import fetch_live_market_news
+from chartink_engine import (
+    fetch_stock_real_ohlc,
+    CHARTINK_CATEGORIES,
+    get_market_breadth_stats,
+    get_sector_heatmap
+)
+
+def render_events_and_news() -> None:
+    """Renders Section 04: Dynamic Event Countdown & News Dossier."""
+    st.html("<div class='section-header'><span>04 / CHARTINK SCANNERS & EVENT AUDIT</span></div>")
+
+    col_event, col_news = st.columns([1, 1.2])
+
+    with col_event:
+        events = get_high_impact_events()
+        event_html_items = ""
+        for ev in events[:4]:
+            ev_name = html.escape(str(ev.get('event', '')))
+            ev_date = html.escape(str(ev.get('date', '')))
+            ev_impact = html.escape(str(ev.get('impact', '')))
+            ev_color = ev.get('color', '#10B981')
+            ev_countdown = html.escape(str(ev.get('countdown', '')))
+
+            event_html_items += f"""
+            <div style="display:flex; justify-content:space-between; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid rgba(255,255,255,0.05);">
+                <div>
+                    <span style="color:#F8FAFC; font-weight:600;">{ev_name}</span>
+                    <div style="color:#64748B; font-size:10px;">{ev_date} • {ev_impact}</div>
+                </div>
+                <b style="color:{ev_color}; font-size:11px; align-self:center;">{ev_countdown}</b>
+            </div>
+            """
+        st.html(f"""
+        <div class="monolith-card" style="padding:16px; height:100%;">
+            <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF; margin-bottom:12px;">
+                📅 DYNAMIC EVENT COUNTDOWN
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#CBD5E1;">
+                {event_html_items}
+            </div>
+        </div>
+        """)
+
+    with col_news:
+        live_news = fetch_live_market_news(limit=4)
+        if not live_news:
+            st.html("""
+            <div class="monolith-card" style="padding:16px; height:100%;">
+                <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF; margin-bottom:12px;">
+                    ⚡ IMPACT INTELLIGENCE & NEWS AUDIT
+                </div>
+                <div style="color:#94A3B8; font-size:12px; padding:28px 16px; text-align:center; font-family:'JetBrains Mono', monospace; background:rgba(0,0,0,0.3); border-radius:8px; border:1px dashed rgba(255,255,255,0.1);">
+                    📡 News Feed Currently Unavailable<br>
+                    <span style="font-size:10px; color:#64748B;">Official RSS feeds unreachable or network offline</span>
+                </div>
+            </div>
+            """)
+        else:
+            news_html_items = ""
+            for item in live_news:
+                source = html.escape(str(item.get('source', 'Financial Wire')))
+                credibility = html.escape(str(item.get('credibility', 'TIER 1 (OFFICIAL / VERIFIED)')))
+                color = item.get('color', '#10B981')
+                score = item.get('score', 8.0)
+                title = html.escape(str(item.get('title', '')))
+                expected_move = html.escape(str(item.get('expected_move', '100 - 200 pts')))
+                tag = html.escape(str(item.get('tag', 'MARKET UPDATE')))
+                link = html.escape(str(item.get('link', '#')))
+                pub_time = html.escape(str(item.get('published_ist') or item.get('time', '')))
+
+                news_html_items += f"""
+                <div style="background:rgba(0,0,0,0.4); border-left:3px solid {color}; padding:9px 12px; border-radius:8px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; font-family:'JetBrains Mono', monospace;">
+                        <span style="color:#94A3B8;">{source} • {credibility} {f'• {pub_time}' if pub_time else ''}</span>
+                        <b style="color:{color}; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">{score}/10 IMPACT</b>
+                    </div>
+                    <div style="font-size:12px; font-weight:600; color:#E2E8F0; margin:4px 0; line-height:1.3;">
+                        <a href="{link}" target="_blank" rel="noopener noreferrer" style="color:#E2E8F0; text-decoration:none;">{title} ↗</a>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:10px; font-family:'JetBrains Mono', monospace; color:#64748B;">
+                        <span>Expected Move: <b style="color:#FCD34D;">{expected_move}</b></span>
+                        <span style="color:#94A3B8;">{tag}</span>
+                    </div>
+                </div>
+                """
+            st.html(f"""
+            <div class="monolith-card" style="padding:16px; height:100%;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF;">
+                        ⚡ IMPACT INTELLIGENCE & NEWS AUDIT
+                    </div>
+                    <span style="font-size:10px; font-family:'JetBrains Mono', monospace; color:#10B981; background:rgba(16,185,129,0.1); padding:2px 8px; border-radius:12px; border:1px solid rgba(16,185,129,0.3);">TIER 1 RSS</span>
+                </div>
+                {news_html_items}
+            </div>
+            """)
+
+def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
+    """Renders Mode 2: Chartink Pro Suite with sortable dataframes and interactive candlestick/RSI."""
+    # 1. Navbar
+    st.html("""
+    <div style="background:#0B132B; border:1px solid #1C2541; border-radius:14px; padding:14px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6);">
+        <div style="display:flex; align-items:center; flex-wrap:wrap; gap:14px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-family:'Syncopate', sans-serif; font-size:clamp(18px, 3vw, 24px); font-weight:900; color:#FF6B00; letter-spacing:2px;">CHART<span style="color:#FFFFFF;">INK</span></span>
+                <span style="background:rgba(255,107,0,0.18); color:#FF6B00; border:1px solid rgba(255,107,0,0.35); font-size:10px; font-weight:800; padding:2px 8px; border-radius:4px; font-family:'JetBrains Mono', monospace;">PRO REA CLONE</span>
+            </div>
+            <div style="height:20px; width:1px; background:rgba(255,255,255,0.1);"></div>
+            <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:11px; font-weight:600; color:#94A3B8;">
+                <span style="color:#FFFFFF; cursor:pointer;">⚡ Screener</span>
+                <span style="color:#94A3B8; cursor:pointer;">📊 Atlas Dashboard</span>
+                <span style="color:#94A3B8; cursor:pointer;">🛠️ Custom Query</span>
+                <span style="color:#94A3B8; cursor:pointer;">🕯️ Candlestick</span>
+            </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#10B981; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); padding:4px 12px; border-radius:20px;">
+                ● NSE HIGH-LIQUIDITY SAMPLE (Top 16 F&O Heavyweights)
+            </span>
+        </div>
+    </div>
+    """)
+
+    # 2. Market Breadth
+    breadth = get_market_breadth_stats()
+    st.html(f"""
+    <div style="background:#0F172A; border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; margin-bottom:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px;">📊</span>
+                <b style="font-family:'Syncopate', sans-serif; font-size:11px; color:#FFFFFF; letter-spacing:1px;">CHARTINK ATLAS: MARKET BREADTH HEALTH GAUGE</b>
+            </div>
+            <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:800; color:#10B981; background:rgba(16,185,129,0.12); padding:3px 10px; border-radius:12px; border:1px solid rgba(16,185,129,0.3);">
+                {html.escape(breadth['market_regime'])}
+            </span>
+        </div>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; font-family:'JetBrains Mono', monospace;">
+            <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 20 EMA</div>
+                <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{breadth['pct_above_20_ema']}%</div>
+                <div style="font-size:9.5px; color:#64748B;">Short-Term Push</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 50 EMA</div>
+                <div style="font-size:20px; font-weight:900; color:#00F0FF; margin:2px 0;">{breadth['pct_above_50_ema']}%</div>
+                <div style="font-size:9.5px; color:#64748B;">Structural Base</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 200 EMA</div>
+                <div style="font-size:20px; font-weight:900; color:#F59E0B; margin:2px 0;">{breadth['pct_above_200_ema']}%</div>
+                <div style="font-size:9.5px; color:#64748B;">Macro Bull Base</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
+                <div style="font-size:9.5px; color:#94A3B8;">ADVANCE / DECLINE</div>
+                <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{html.escape(str(breadth['adv_dec_ratio'])[:4])}</div>
+                <div style="font-size:9.5px; color:#10B981;">{breadth['advances']} Adv / {breadth['declines']} Dec</div>
+            </div>
+        </div>
+    </div>
+    """)
+
+    # 3. Sector Heatmap
+    sectors = get_sector_heatmap()
+    sec_html_cards = ""
+    for sc in sectors:
+        border_c = sc.get('color', '#10B981')
+        sec_name = html.escape(str(sc.get('sector', '')))
+        sec_chg = html.escape(str(sc.get('chg', '')))
+        sec_status = html.escape(str(sc.get('status', '')))
+        sec_html_cards += f"""
+        <div style="background:#0F172A; border-top:3px solid {border_c}; padding:10px; border-radius:8px; text-align:center; font-family:'JetBrains Mono', monospace;">
+            <div style="font-size:10px; color:#94A3B8;">{sec_name}</div>
+            <div style="font-size:16px; font-weight:900; color:{border_c}; margin:2px 0;">{sec_chg}</div>
+            <div style="font-size:9px; color:#CBD5E1;">{sec_status}</div>
+        </div>
+        """
+
+    st.html(f"""
+    <div class="sector-responsive-grid">
+        {sec_html_cards}
+    </div>
+    """)
+
+    # 4. Scanner Category Selector
+    cat_list = list(CHARTINK_CATEGORIES.keys()) + ["🌐 All 16 Scanned Stocks"]
+    sel_cat = st.selectbox("Select Chartink Scanner Category:", cat_list, index=0)
+
+    if sel_cat in CHARTINK_CATEGORIES:
+        active_cat = CHARTINK_CATEGORIES[sel_cat]
+        clauses_html = "<br>".join([f"<span style='color:#E2E8F0;'>{html.escape(c)}</span>" for c in active_cat['clauses']])
+        st.html(f"""
+        <div style="background:#0B132B; border:1px solid rgba(255,107,0,0.3); border-radius:12px; padding:16px; margin-bottom:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="color:#FF6B00; font-size:16px;">🛠️</span>
+                    <b style="color:#FFFFFF; font-family:'Syncopate', sans-serif; font-size:11px;">CHARTINK FILTER QUERY BUILDER: {html.escape(sel_cat)}</b>
+                </div>
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; line-height:1.6; background:rgba(0,0,0,0.5); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+                {clauses_html}
+            </div>
+            <div style="font-size:11px; color:#94A3B8; margin-top:8px;">
+                <b>Description:</b> {html.escape(active_cat['desc'])}
+            </div>
+        </div>
+        """)
+        table_stocks = [dict(s) for s in active_cat['stocks']]
+    else:
+        table_stocks = []
+        for c in CHARTINK_CATEGORIES.values():
+            table_stocks.extend([dict(s) for s in c['stocks']])
+
+    # Apply live quotes
+    for s in table_stocks:
+        if s["sym"] in live_snap.get("chartink_live_quotes", {}):
+            lq = live_snap["chartink_live_quotes"][s["sym"]]
+            if lq.get("last", 0) > 0:
+                s["price"] = lq["last"]
+                s["chg"] = lq.get("pct_str", s["chg"])
+
+    # 5. Sortable Results Table with st.column_config
+    st.html("""
+    <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF; margin-bottom:8px;">
+        📋 LIVE SCANNER RESULTS (NSE HIGH-LIQUIDITY SAMPLE • NATIVE SORTABLE)
+    </div>
+    """)
+
+    results_data = []
+    for idx, s in enumerate(table_stocks):
+        raw_price = s.get("price")
+        price_num = float(raw_price) if isinstance(raw_price, (int, float)) else None
+
+        raw_chg = str(s.get("chg", "0.0")).replace("%", "").replace("+", "").strip()
+        try:
+            chg_num = float(raw_chg)
+        except ValueError:
+            chg_num = 0.0
+
+        results_data.append({
+            "Sr": idx + 1,
+            "Symbol": s["sym"],
+            "Company": s["name"],
+            "Sector": s["sec"],
+            "Price": price_num,
+            "Change %": chg_num,
+            "Volume Surge": s.get("vol", "1.0x"),
+            "Reference R1": float(s.get("t1", 0.0)),
+            "Reference R2": float(s.get("t2", 0.0)),
+            "Reference S1": float(s.get("sl", 0.0)),
+            "R:R": s.get("rr", "1:1.5"),
+            "Strength": s.get("conv", "70%")
+        })
+
+    st.dataframe(
+        pd.DataFrame(results_data),
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Sr": st.column_config.NumberColumn("Sr", width="small"),
+            "Symbol": st.column_config.TextColumn("Symbol", width="small"),
+            "Company": st.column_config.TextColumn("Company Name", width="medium"),
+            "Sector": st.column_config.TextColumn("Sector", width="small"),
+            "Price": st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
+            "Change %": st.column_config.NumberColumn("Change %", format="%.2f%%"),
+            "Reference R1": st.column_config.NumberColumn("Ref R1 (₹)", format="₹%.2f"),
+            "Reference R2": st.column_config.NumberColumn("Ref R2 (₹)", format="₹%.2f"),
+            "Reference S1": st.column_config.NumberColumn("Ref S1 (₹)", format="₹%.2f"),
+        }
+    )
+
+    # 6. Interactive Candlestick & RSI Inspector
+    st.html("""
+    <div class="section-header"><span>02 / CHARTINK INTERACTIVE CHART & RSI(14) INSPECTOR</span></div>
+    """)
+
+    stock_symbols = [s["sym"] for s in table_stocks]
+    if stock_symbols:
+        selected_inspect_stock = st.selectbox("Select Stock for Candlestick Inspector:", stock_symbols, index=0)
+        inspect_df = fetch_stock_real_ohlc(selected_inspect_stock, period="3mo")
+        is_genuine_data = inspect_df.get("is_real", pd.Series([True])).iloc[0] if 'is_real' in inspect_df.columns else True
+        data_badge = "🟢 GENUINE DAILY OHLC (NSE)" if is_genuine_data else "🟡 OFFLINE CACHED OHLC"
+
+        st.html(f"""
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-family:'JetBrains Mono', monospace; font-size:11px;">
+            <span style="color:#94A3B8;">Asset: <b style="color:#FFFFFF;">{html.escape(selected_inspect_stock)}</b></span>
+            <span style="color:#10B981; background:rgba(16,185,129,0.12); padding:3px 10px; border-radius:6px; border:1px solid rgba(16,185,129,0.3);">{data_badge}</span>
+        </div>
+        """)
+
+        fig_chartink = make_subplots(
+            rows=2, cols=1, shared_xaxes=True,
+            vertical_spacing=0.03, row_heights=[0.72, 0.28]
+        )
+
+        fig_chartink.add_trace(go.Candlestick(
+            x=inspect_df['Date'], open=inspect_df['Open'], high=inspect_df['High'],
+            low=inspect_df['Low'], close=inspect_df['Close'],
+            name=selected_inspect_stock,
+            increasing_line_color='#10B981', decreasing_line_color='#F43F5E'
+        ), row=1, col=1)
+
+        fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['EMA20'], line=dict(color='#00F0FF', width=1.5), name='20 EMA'), row=1, col=1)
+        fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['EMA50'], line=dict(color='#F59E0B', width=1.5), name='50 EMA'), row=1, col=1)
+        fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['RSI'], line=dict(color='#FCD34D', width=1.5), name='RSI(14)'), row=2, col=1)
+        fig_chartink.add_hline(y=70, line_dash="dash", line_color="#F43F5E", row=2, col=1)
+        fig_chartink.add_hline(y=30, line_dash="dash", line_color="#10B981", row=2, col=1)
+
+        fig_chartink.update_layout(
+            template="plotly_dark",
+            height=380,
+            margin=dict(l=10, r=10, t=10, b=10),
+            xaxis_rangeslider_visible=False,
+            paper_bgcolor='#000000',
+            plot_bgcolor='#000000',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_chartink, use_container_width=True)
+

@@ -1,0 +1,32 @@
+index_symbol,symbol,yf_ticker,name,weight_pct,sector,as_of_date
+NIFTY 50,HDFCBANK,HDFCBANK.NS,HDFC Bank Ltd.,11.52,Financial Services,2026-10-31
+NIFTY 50,RELIANCE,RELIANCE.NS,Reliance Industries Ltd.,9.18,Oil & Gas,2026-10-31
+NIFTY 50,ICICIBANK,ICICIBANK.NS,ICICI Bank Ltd.,7.94,Financial Services,2026-10-31
+NIFTY 50,INFY,INFY.NS,Infosys Ltd.,5.82,Information Technology,2026-10-31
+NIFTY 50,ITC,ITC.NS,ITC Ltd.,4.31,Consumer Goods,2026-10-31
+NIFTY 50,TCS,TCS.NS,Tata Consultancy Services Ltd.,3.88,Information Technology,2026-10-31
+NIFTY 50,LT,LT.NS,Larsen & Toubro Ltd.,3.69,Construction,2026-10-31
+NIFTY 50,AXISBANK,AXISBANK.NS,Axis Bank Ltd.,3.32,Financial Services,2026-10-31
+NIFTY 50,BHARTIARTL,BHARTIARTL.NS,Bharti Airtel Ltd.,3.14,Telecommunication,2026-10-31
+NIFTY 50,SBIN,SBIN.NS,State Bank of India,2.89,Financial Services,2026-10-31
+BANK NIFTY,HDFCBANK,HDFCBANK.NS,HDFC Bank Ltd.,27.15,Banking Private,2026-10-31
+BANK NIFTY,ICICIBANK,ICICIBANK.NS,ICICI Bank Ltd.,23.05,Banking Private,2026-10-31
+BANK NIFTY,SBIN,SBIN.NS,State Bank of India,11.20,Banking Public,2026-10-31
+BANK NIFTY,AXISBANK,AXISBANK.NS,Axis Bank Ltd.,10.45,Banking Private,2026-10-31
+BANK NIFTY,KOTAKBANK,KOTAKBANK.NS,Kotak Mahindra Bank Ltd.,8.95,Banking Private,2026-10-31
+BANK NIFTY,INDUSINDBK,INDUSINDBK.NS,IndusInd Bank Ltd.,5.40,Banking Private,2026-10-31
+BANK NIFTY,BANKBARODA,BANKBARODA.NS,Bank of Baroda,3.60,Banking Public,2026-10-31
+BANK NIFTY,FEDERALBNK,FEDERALBNK.NS,Federal Bank Ltd.,3.10,Banking Private,2026-10-31
+BANK NIFTY,PNB,PNB.NS,Punjab National Bank,2.55,Banking Public,2026-10-31
+BANK NIFTY,IDFCFIRSTB,IDFCFIRSTB.NS,IDFC First Bank Ltd.,1.95,Banking Private,2026-10-31
+SENSEX,RELIANCE,RELIANCE.BO,Reliance Industries Ltd.,11.85,Oil & Gas,2026-10-31
+SENSEX,HDFCBANK,HDFCBANK.BO,HDFC Bank Ltd.,13.40,Financial Services,2026-10-31
+SENSEX,ICICIBANK,ICICIBANK.BO,ICICI Bank Ltd.,9.55,Financial Services,2026-10-31
+SENSEX,INFY,INFY.BO,Infosys Ltd.,7.10,Information Technology,2026-10-31
+SENSEX,TCS,TCS.BO,Tata Consultancy Services Ltd.,4.75,Information Technology,2026-10-31
+SENSEX,LT,LT.BO,Larsen & Toubro Ltd.,4.50,Construction,2026-10-31
+SENSEX,ITC,ITC.BO,ITC Ltd.,4.45,Consumer Goods,2026-10-31
+SENSEX,BHARTIARTL,BHARTIARTL.BO,Bharti Airtel Ltd.,4.05,Telecommunication,2026-10-31
+SENSEX,SBIN,SBIN.BO,State Bank of India,3.65,Financial Services,2026-10-31
+SENSEX,AXISBANK,AXISBANK.BO,Axis Bank Ltd.,3.50,Financial Services,2026-10-31
+

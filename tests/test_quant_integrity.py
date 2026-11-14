@@ -157,8 +157,9 @@ class TestQuantIntegrity(unittest.TestCase):
             instance = mock_sess.return_value
             instance.get.side_effect = Exception("Connection Refused")
 
-            # Force clear cache
+            # Force clear cache and session
             import live_market_service
+            live_market_service._NSE_SESSION = None
             live_market_service._GIFT_CACHE["last_time"] = 0.0
             live_market_service._GIFT_CACHE["data"] = None
 

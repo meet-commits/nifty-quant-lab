@@ -38,6 +38,31 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
 HOLIDAYS_PATH = os.path.join(CONFIG_DIR, "nse_holidays.csv")
+WEIGHTS_PATH = os.path.join(CONFIG_DIR, "weights.csv")
+
+def load_index_weights_map() -> Dict[str, List[Dict[str, Any]]]:
+    """Loads index constituent weights from config/weights.csv."""
+    if not os.path.exists(WEIGHTS_PATH):
+        return {"NIFTY 50": HEAVYWEIGHT_META}
+    
+    import csv
+    weights_map: Dict[str, List[Dict[str, Any]]] = {}
+    with open(WEIGHTS_PATH, mode="r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            idx = row["index_symbol"].strip()
+            if idx not in weights_map:
+                weights_map[idx] = []
+            weights_map[idx].append({
+                "sym": row["symbol"].strip(),
+                "yf": row["yf_ticker"].strip(),
+                "name": row["name"].strip(),
+                "wt": f"{float(row['weight_pct']):.1f}%",
+                "weight_pct": float(row["weight_pct"]),
+                "sector": row.get("sector", "").strip(),
+                "as_of_date": row.get("as_of_date", "").strip()
+            })
+    return weights_map
 
 # Global Cache Storage
 _CACHE = {
@@ -342,47 +367,65 @@ def fetch_nse_gift_nifty(spot_nifty: Optional[float] = None) -> Dict[str, Any]:
     }
 
 
-def fetch_batch_yfinance_quotes(symbols: List[str], max_retries: int = 3) -> Dict[str, Quote]:
+def fetch_batch_yfinance_quotes(symbols: List[str], max_retries: int = 2) -> Dict[str, Quote]:
     """
-    Downloads index and global tickers in batch with exponential backoff.
+    Downloads index and global tickers in batch via yf.download with timeout and caching.
     Falls back to DuckDB persisted data on connection failure.
     """
-    quotes = {}
+    quotes: Dict[str, Quote] = {}
     now_ist = datetime.now(IST)
     is_mkt_open, _, _ = get_market_session_status()
 
     for attempt in range(max_retries):
         try:
-            tickers_obj = yf.Tickers(" ".join(symbols))
-            for sym in symbols:
-                try:
-                    t = tickers_obj.tickers.get(sym) or yf.Ticker(sym)
-                    fi = t.fast_info
-                    raw_last = getattr(fi, 'last_price', None)
-                    if raw_last is not None and float(raw_last) > 0:
-                        lp = float(raw_last)
-                        prev = float(getattr(fi, 'previous_close', lp) or lp)
-                        op = float(getattr(fi, 'open', lp) or lp)
-                        hp = float(getattr(fi, 'day_high', lp) or lp)
-                        lowp = float(getattr(fi, 'day_low', lp) or lp)
+            df = yf.download(" ".join(symbols), period="5d", progress=False, timeout=8)
+            if not df.empty:
+                for sym in symbols:
+                    try:
+                        if isinstance(df.columns, pd.MultiIndex):
+                            if 'Close' in df.columns.levels[0] and sym in df['Close'].columns:
+                                c_s = df['Close'][sym].dropna()
+                                if not c_s.empty:
+                                    lp = float(c_s.iloc[-1])
+                                    prev = float(c_s.iloc[-2]) if len(c_s) > 1 else lp
+                                    hp = float(df['High'][sym].dropna().iloc[-1]) if ('High' in df.columns.levels[0] and sym in df['High'].columns and not df['High'][sym].dropna().empty) else lp
+                                    lowp = float(df['Low'][sym].dropna().iloc[-1]) if ('Low' in df.columns.levels[0] and sym in df['Low'].columns and not df['Low'][sym].dropna().empty) else lp
+                                    op = float(df['Open'][sym].dropna().iloc[-1]) if ('Open' in df.columns.levels[0] and sym in df['Open'].columns and not df['Open'][sym].dropna().empty) else lp
 
-                        quotes[sym] = make_quote(
-                            value=lp,
-                            ts_ist=now_ist,
-                            source="LIVE_YFINANCE",
-                            is_market_hours=is_mkt_open,
-                            open=op,
-                            high=hp,
-                            low=lowp,
-                            prev=prev,
-                            is_real=True
-                        )
-                except Exception:
-                    pass
-            if len(quotes) >= len(symbols) * 0.7:
-                break
+                                    quotes[sym] = make_quote(
+                                        value=lp,
+                                        ts_ist=now_ist,
+                                        source="LIVE_YFINANCE_BATCH",
+                                        is_market_hours=is_mkt_open,
+                                        open=op,
+                                        high=hp,
+                                        low=lowp,
+                                        prev=prev,
+                                        is_real=True
+                                    )
+                        else:
+                            c_s = df['Close'].dropna()
+                            if not c_s.empty:
+                                lp = float(c_s.iloc[-1])
+                                prev = float(c_s.iloc[-2]) if len(c_s) > 1 else lp
+                                quotes[sym] = make_quote(
+                                    value=lp,
+                                    ts_ist=now_ist,
+                                    source="LIVE_YFINANCE_BATCH",
+                                    is_market_hours=is_mkt_open,
+                                    open=float(df['Open'].dropna().iloc[-1]) if not df['Open'].dropna().empty else lp,
+                                    high=float(df['High'].dropna().iloc[-1]) if not df['High'].dropna().empty else lp,
+                                    low=float(df['Low'].dropna().iloc[-1]) if not df['Low'].dropna().empty else lp,
+                                    prev=prev,
+                                    is_real=True
+                                )
+                    except Exception:
+                        pass
+                if len(quotes) >= len(symbols) * 0.7:
+                    break
         except Exception:
-            time.sleep(1.0 * (2 ** attempt))
+            if attempt < max_retries - 1:
+                time.sleep(1.0 * (2 ** attempt))
 
     # For any symbol that failed, query last persisted quote from DuckDB or set None
     for sym in symbols:
@@ -467,8 +510,11 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
             quote_map[sym] = q.to_dict()
 
         # 2. Parallel fetch Equities (NSE MCP primary -> yfinance fallback)
-        equity_tasks = []
-        all_equities = {hw["sym"]: hw["yf"] for hw in HEAVYWEIGHT_META}
+        weights_map = load_index_weights_map()
+        all_equities = {}
+        for idx_stocks in weights_map.values():
+            for s in idx_stocks:
+                all_equities[s["sym"]] = s["yf"]
         all_equities.update(CHARTINK_STOCK_MAP)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
@@ -484,40 +530,49 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
                     yf_sym = future_to_sym[future]
                     quote_map[yf_sym] = make_quote(None, source="FAILED", is_market_hours=is_open).to_dict()
 
-        # 3. Build Heavyweights dataset
-        heavyweights_data = []
-        for hw in HEAVYWEIGHT_META:
-            q = quote_map.get(hw["yf"], {})
-            last_p = q.get("value")
-            pct = q.get("pct_str", "N/A")
-            bull = q.get("bull", True)
-            chg_pct = q.get("chg_pct")
+        # 3. Build Index-Specific Constituents datasets from config/weights.csv
+        constituents_by_index: Dict[str, List[Dict[str, Any]]] = {}
+        for idx_name, idx_stocks in weights_map.items():
+            stock_list = []
+            for s in idx_stocks:
+                q = quote_map.get(s["yf"], {})
+                last_p = q.get("value")
+                pct = q.get("pct_str", "N/A")
+                bull = q.get("bull", True)
+                chg_pct = q.get("chg_pct")
 
-            if last_p is not None and chg_pct is not None:
-                price_str = f"₹{last_p:,.2f}"
-                if chg_pct > 1.0:
-                    status = "⚡ Institutional Lead"
-                elif chg_pct > 0.0:
-                    status = "🟢 Positive Accumulation"
-                elif chg_pct < -1.0:
-                    status = "🔻 Heavy Index Drag"
+                if last_p is not None and chg_pct is not None:
+                    price_str = f"₹{last_p:,.2f}"
+                    if chg_pct > 1.0:
+                        status = "⚡ Institutional Lead"
+                    elif chg_pct > 0.0:
+                        status = "🟢 Positive Accumulation"
+                    elif chg_pct < -1.0:
+                        status = "🔻 Heavy Drag"
+                    else:
+                        status = "🟡 Mild Pullback"
                 else:
-                    status = "🟡 Mild Pullback"
-            else:
-                price_str = "N/A"
-                status = "⚪ Quote Stale/Offline"
+                    price_str = "N/A"
+                    status = "⚪ Quote Stale/Offline"
 
-            heavyweights_data.append({
-                "sym": hw["sym"],
-                "name": hw["name"],
-                "wt": hw["wt"],
-                "price": price_str,
-                "pct": pct,
-                "status": status,
-                "bull": bull,
-                "source": q.get("source", "UNKNOWN"),
-                "is_stale": q.get("is_stale", True)
-            })
+                stock_list.append({
+                    "sym": s["sym"],
+                    "name": s["name"],
+                    "wt": s["wt"],
+                    "weight_pct": s.get("weight_pct", 0.0),
+                    "sector": s.get("sector", ""),
+                    "as_of_date": s.get("as_of_date", ""),
+                    "price": price_str,
+                    "pct": pct,
+                    "chg_pct": chg_pct,
+                    "status": status,
+                    "bull": bull,
+                    "source": q.get("source", "UNKNOWN"),
+                    "is_stale": q.get("is_stale", True)
+                })
+            constituents_by_index[idx_name] = stock_list
+
+        heavyweights_data = constituents_by_index.get("NIFTY 50", [])
 
         # 4. Chartink Equities Map
         chartink_live_quotes = {}
@@ -545,7 +600,12 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
 
         # 7. Official GIFT Nifty
         gift_q = fetch_nse_gift_nifty(spot_nifty=n_q.get("last"))
-        gift_prev = {"high": nifty_prev["high"] + 25.0 if nifty_prev else None, "low": nifty_prev["low"] + 25.0 if nifty_prev else None, "close": nifty_prev["close"] + 25.0 if nifty_prev else None}
+        gift_basis = round((gift_q.get("last") or 0.0) - (n_q.get("last") or 0.0), 2) if (gift_q.get("last") and n_q.get("last")) else 0.0
+        gift_prev = {
+            "high": nifty_prev["high"] + gift_basis if (nifty_prev and nifty_prev.get("high")) else None,
+            "low": nifty_prev["low"] + gift_basis if (nifty_prev and nifty_prev.get("low")) else None,
+            "close": nifty_prev["close"] + gift_basis if (nifty_prev and nifty_prev.get("close")) else None
+        }
         gift_pivots = calc_floor_pivots(gift_prev["high"], gift_prev["low"], gift_prev["close"])
 
         snapshot = {
@@ -558,6 +618,7 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
             "mcp_stats": get_nse_mcp_stats(),
             "quote_map": quote_map,
             "heavyweights": heavyweights_data,
+            "constituents_by_index": constituents_by_index,
             "chartink_live_quotes": chartink_live_quotes,
             "is_post_close": is_post_close,
             "nifty": {
@@ -606,11 +667,18 @@ def fetch_live_market_snapshot(force_refresh: bool = False) -> Dict[str, Any]:
 def get_live_intraday_candles(symbol: str = "^NSEI", interval: str = "5m") -> pd.DataFrame:
     """
     Downloads genuine real-time intraday candles from Yahoo Finance.
+    Caches results in memory for 60 seconds to prevent rate-limiting.
     If today's market is closed (e.g. overnight or weekend), pulls the most recent completed
     trading session's genuine 5m candles (period='5d').
     If 5m intraday is completely unavailable, falls back to DuckDB daily bars with explicit labeling.
     Never invents synthetic random/trigonometric numbers.
     """
+    now_ts = time.time()
+    cache_key = f"{symbol}_{interval}"
+    cached = _CACHE.get("candles_5m", {}).get(cache_key)
+    if cached and (now_ts - cached.get("time", 0.0) < 60.0):
+        return cached["df"].copy()
+
     try:
         t = yf.Ticker(symbol)
         df = t.history(period="1d", interval=interval)
@@ -634,6 +702,9 @@ def get_live_intraday_candles(symbol: str = "^NSEI", interval: str = "5m") -> pd
                 result_df = df[["Date", "Open", "High", "Low", "Close", "Volume"]].copy()
                 result_df.attrs["is_daily_fallback"] = False
                 result_df.attrs["feed_type"] = "INTRADAY_5M_EXCHANGE"
+                if "candles_5m" not in _CACHE:
+                    _CACHE["candles_5m"] = {}
+                _CACHE["candles_5m"][cache_key] = {"time": now_ts, "df": result_df.copy()}
                 return result_df
     except Exception as e:
         print(f"Error fetching intraday candles for {symbol}: {e}")
