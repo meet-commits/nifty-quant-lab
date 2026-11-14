@@ -21,6 +21,7 @@ data/*.csv
 # Allow seed archive & config CSVs for cloud deployment
 !data/market_data.parquet
 !data/production_suite.joblib
+!data/backtests/*.csv
 !config/*.csv
 
 # Secrets & Local Config

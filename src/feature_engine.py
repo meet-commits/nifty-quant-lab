@@ -218,12 +218,15 @@ def build_feature_matrix(
     # 7. Calendar Features
     features['day_of_week'] = np.array([d.weekday() for d in features.index])
     # Days to Thursday weekly expiry: (3 - day_of_week) % 7
-    features['days_to_expiry'] = (3 - features['day_of_week']) % 7
+    # For overnight carry entering at 15:15 on Thursday (expiry day), roll to next week's contract (DTE = 7)
+    raw_dte = (3 - features['day_of_week']) % 7
+    features['days_to_expiry'] = np.where(raw_dte == 0, 7, raw_dte)
 
     # 8. TARGET VARIABLES (Computed only on historical rows, not on live inference row)
     features['next_open'] = features['nifty_open'].shift(-1)
     features['gap_points'] = features['next_open'] - features['nifty_close']
     features['gap_pct'] = (features['gap_points'] / features['nifty_close']) * 100.0
+    features['prev_open_gap_pct'] = features['gap_pct'].shift(1)
 
     # Target A: 3-Class Regime Target
     # 2: GAP UP (gap_pct >= +threshold%)
