@@ -77,6 +77,21 @@ def render_gap_forecast_card(live_snap: Dict[str, Any]) -> None:
             signal_color = "#F59E0B"
 
         horizon_label = '3:15 PM EOD HORIZON' if model_type_key == 'eod_1515' else '08:45 AM PRE-OPEN NOWCAST'
+        hit_rate_ci = "48.3% [95% CI: 46.3% - 50.5%]" if model_type_key == 'eod_1515' else "54.2% [95% CI: 52.2% - 56.3%]"
+
+        # Best Baseline Rule (S&P 500 Implied Gap)
+        sp_q = live_snap.get("sp500") or {}
+        sp_pct = float(sp_q.get("chg_pct") or 0.0)
+        sp_implied_gap = sp_pct * 0.40
+        if sp_implied_gap >= 0.25:
+            base_badge = "🟢 S&P 500 Rule: Gap-Up bias"
+            base_color = "#10B981"
+        elif sp_implied_gap <= -0.25:
+            base_badge = "🔴 S&P 500 Rule: Gap-Down bias"
+            base_color = "#F43F5E"
+        else:
+            base_badge = "🟡 S&P 500 Rule: Flat / Chop"
+            base_color = "#F59E0B"
 
         st.html(f"""
         <div class="monolith-card-gold" style="padding:16px 20px; margin-bottom:18px; border:1px solid rgba(245,158,11,0.3);">
@@ -87,14 +102,25 @@ def render_gap_forecast_card(live_snap: Dict[str, Any]) -> None:
                         OVERNIGHT GAP PROJECTION <span style="font-size:10px; color:#FCD34D;">({horizon_label})</span>
                     </span>
                 </div>
-                <div style="display:flex; gap:10px; align-items:center;">
-                    <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:{signal_color}; background:{signal_color}18; border:1px solid {signal_color}55; padding:4px 14px; border-radius:999px;">
+                <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                    <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:800; color:{base_color}; background:{base_color}18; border:1px solid {base_color}55; padding:4px 10px; border-radius:999px;">
+                        ● Best Baseline: {base_badge}
+                    </span>
+                    <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:800; color:{signal_color}; background:{signal_color}18; border:1px solid {signal_color}55; padding:4px 10px; border-radius:999px;">
                         ● {signal_badge}
                     </span>
-                    <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#94A3B8;">
+                    <span style="font-family:'JetBrains Mono', monospace; font-size:9.5px; color:#94A3B8;">
+                        Hit Rate: {hit_rate_ci}
+                    </span>
+                    <span style="font-family:'JetBrains Mono', monospace; font-size:9.5px; color:#94A3B8;">
                         IV: {iv_used:.1f}%
                     </span>
                 </div>
+            </div>
+
+            <!-- Honest Edge / Baseline Disclaimer -->
+            <div style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.3); border-radius:8px; padding:6px 12px; margin-bottom:12px; font-family:'JetBrains Mono', monospace; font-size:10px; color:#FCD34D;">
+                ⚠️ Statistical Diagnostic: Paired bootstrap test (p = 0.7750, 95% CI [-3.58% to +1.54%]) confirms <b>no demonstrated edge over simple S&P 500 implied gap rule</b> (54.18% vs 55.12%). Simplified model (S&P+Crude+VIX) achieves 56.62%. Model A operates with ~12.4 pt empirical 15:15-to-15:30 closing drift.
             </div>
 
             <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px; margin-bottom:14px;">
