@@ -9,9 +9,12 @@ from typing import Dict, Any
 
 def render_status_bar(live_snap: Dict[str, Any], latest_date: str) -> None:
     """Renders top header status bar with balanced HTML tags."""
-    status_color = live_snap.get("status_color", "#10B981")
-    session_status = live_snap.get("session_status", "MARKET CLOSED")
-    mcp_info = live_snap.get("mcp_health", {})
+    if not live_snap or not isinstance(live_snap, dict):
+        live_snap = {}
+
+    status_color = live_snap.get("status_color", "#64748B")
+    session_status = live_snap.get("session_status", "DATA UNAVAILABLE")
+    mcp_info = live_snap.get("mcp_health") or {}
     is_mcp_online = mcp_info.get("is_online", True)
 
     mcp_badge_html = """

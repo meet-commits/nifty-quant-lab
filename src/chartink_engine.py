@@ -70,10 +70,64 @@ def calc_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.rolling(window=period, min_periods=1).mean().bfill().round(2)
 
 
+def adjust_corporate_actions(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detects and adjusts for unadjusted corporate actions (stock splits / bonus issues) in bhavcopy.
+    A corporate action is detected when:
+    - 1-day price ratio (close / prev_close) <= 0.65 (drop > 35%, e.g. 2:1, 5:1, 10:1 split, 1:1 bonus)
+      or >= 1.55 (reverse split).
+    
+    Adjustment:
+    All historical price bars (open, high, low, close, prev_close) prior to the ex-date
+    are multiplied by the split ratio (close / prev_close). On the ex-date, prev_close is also
+    adjusted by the ratio so the 1-day return reflects economic return rather than nominal split artifact.
+    This guarantees 200 EMA, 50 EMA, and RSI(14) maintain continuity without false breakdown or oversold signals.
+    """
+    if df.empty or 'symbol' not in df.columns:
+        return df
+
+    adjusted_dfs = []
+    for _, group in df.groupby('symbol', sort=False):
+        g = group.sort_values('trade_date').copy()
+        n = len(g)
+        if n < 2:
+            adjusted_dfs.append(g)
+            continue
+
+        closes = g['close'].to_numpy(dtype=float, copy=True)
+        prev_closes = g['prev_close'].to_numpy(dtype=float, copy=True)
+
+        # Detect corporate action dates working backwards
+        adj_factor = np.ones(n, dtype=float)
+        for i in range(n - 1, 0, -1):
+            c_curr = closes[i]
+            p_curr = prev_closes[i] if prev_closes[i] > 0 else closes[i - 1]
+            if p_curr <= 0 or c_curr <= 0:
+                continue
+
+            ratio = c_curr / p_curr
+            # Drop > 35% or Jump > 55%
+            if ratio <= 0.65 or ratio >= 1.55:
+                adj_factor[:i] *= ratio
+                # Adjust prev_close on ex-date row so 1-day change is continuous
+                prev_closes[i] = prev_closes[i] * ratio
+
+        if not np.all(adj_factor == 1.0):
+            for col in ['open', 'high', 'low', 'close']:
+                if col in g.columns:
+                    g[col] = (g[col].to_numpy(dtype=float) * adj_factor).round(2)
+            g['prev_close'] = prev_closes.round(2)
+
+        adjusted_dfs.append(g)
+
+    return pd.concat(adjusted_dfs, ignore_index=True)
+
+
 def compute_universe_indicators(universe_df: pd.DataFrame) -> pd.DataFrame:
     """
     Computes vectorized technical indicators per symbol across the universe history:
-    - EMA 20, EMA 50, EMA 200
+    - Pre-adjusts for corporate actions (splits/bonuses)
+    - EMA 20 (>=20 sessions), EMA 50 (>=50 sessions), EMA 200 (>=200 sessions; NaN otherwise)
     - Wilder's RSI(14)
     - ATR(14)
     - 20-day SMA Volume & Volume Surge Ratio
@@ -86,10 +140,21 @@ def compute_universe_indicators(universe_df: pd.DataFrame) -> pd.DataFrame:
     df['trade_date'] = pd.to_datetime(df['trade_date']).dt.date
     df = df.sort_values(by=['symbol', 'trade_date']).reset_index(drop=True)
 
-    # 1. Exponential Moving Averages
-    df['ema20'] = df.groupby('symbol')['close'].transform(lambda s: s.ewm(span=20, adjust=False).mean()).round(2)
-    df['ema50'] = df.groupby('symbol')['close'].transform(lambda s: s.ewm(span=50, adjust=False).mean()).round(2)
-    df['ema200'] = df.groupby('symbol')['close'].transform(lambda s: s.ewm(span=200, adjust=False).mean()).round(2)
+    # 0. Adjust for Corporate Actions (Splits / Bonuses)
+    df = adjust_corporate_actions(df)
+
+    # Count sessions per symbol for indicator validity
+    counts = df.groupby('symbol')['close'].transform('count')
+
+    # 1. Exponential Moving Averages with minimum session requirements
+    raw_ema20 = df.groupby('symbol')['close'].transform(lambda s: s.ewm(span=20, adjust=False).mean()).round(2)
+    df['ema20'] = np.where(counts >= 20, raw_ema20, np.nan)
+
+    raw_ema50 = df.groupby('symbol')['close'].transform(lambda s: s.ewm(span=50, adjust=False).mean()).round(2)
+    df['ema50'] = np.where(counts >= 50, raw_ema50, np.nan)
+
+    raw_ema200 = df.groupby('symbol')['close'].transform(lambda s: s.ewm(span=200, adjust=False).mean()).round(2)
+    df['ema200'] = np.where(counts >= 200, raw_ema200, np.nan)
 
     # 2. RSI(14)
     df['rsi14'] = df.groupby('symbol')['close'].transform(lambda s: calc_rsi(s, 14))
@@ -142,7 +207,7 @@ def scan_trend_leader_highs(latest_df: pd.DataFrame, universe_df: pd.DataFrame =
 def scan_rsi_oversold_dips(latest_df: pd.DataFrame, universe_df: pd.DataFrame = None) -> pd.DataFrame:
     """🔥 RSI < 32 Panic Oversold Dips: Deep pullback with bullish intraday rejection."""
     cond = (
-        (latest_df['rsi14'] <= 35.0) &
+        (latest_df['rsi14'] < 32.0) &
         (latest_df['close'] >= latest_df['open'])
     )
     return latest_df[cond].copy()
@@ -196,6 +261,7 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
             "• [ Latest ] [ Close ] >= [ Latest ] [ 20 period EMA ]",
             "• [ Latest ] [ RSI (14) ] between 54 and 78"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_volume_surge_momentum
     },
     "👑 Multi-Month Trend Leaders (Stage 2)": {
@@ -206,14 +272,16 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
             "• [ Latest ] [ Close ] >= [ Latest ] [ 20 period EMA ]",
             "• [ Latest ] [ RSI (14) ] >= 55.0"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_trend_leader_highs
     },
     "🔥 RSI < 32 Panic Oversold Accumulation": {
         "desc": "Institutional accumulation on oversold pullbacks with bullish intraday close rejection",
         "clauses": [
-            "• [ Latest ] [ RSI (14) ] <= 35.0 (Oversold Range)",
+            "• [ Latest ] [ RSI (14) ] < 32.0 (Strict Oversold Range)",
             "• [ Latest ] [ Close ] >= [ Latest ] [ Open ] (Bullish Absorption Candle)"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_rsi_oversold_dips
     },
     "🚀 20 & 50 EMA Bullish Confluence": {
@@ -224,6 +292,7 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
             "• [ Latest ] [ Volume ] >= [ 20 period SMA(Volume) ] * 1.3",
             "• [ Latest ] [ 1-day Change % ] >= 0.0%"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_ema_confluence
     },
     "💎 Tight Consolidation Range Breakout (VCP)": {
@@ -233,6 +302,7 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
             "• [ Latest ] [ Close ] >= [ 10 period Max(High) ] * 0.985 (Range Exit)",
             "• [ Latest ] [ Volume ] >= [ 20 period SMA(Volume) ] * 1.3"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_darvas_box_breakout
     },
     "🔴 Bearish Breakdown & 200 EMA Rejection": {
@@ -242,6 +312,7 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
             "• [ Latest ] [ Close ] <= [ Latest ] [ 200 period EMA ]",
             "• [ Latest ] [ RSI (14) ] <= 45.0"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_bearish_breakdown
     },
     "🌐 All Scanned Stocks (Full Universe)": {
@@ -250,6 +321,7 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
             "• Active cash equity segment (Series EQ / BE)",
             "• Ranked by daily turnover and liquidity"
         ],
+        "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_full_universe
     }
 }
@@ -298,8 +370,9 @@ def run_chartink_scan(scanner_name: str, force_refresh: bool = False) -> Tuple[p
     """
     universe_df, latest_df = get_or_calc_indicator_universe(force_refresh=force_refresh)
 
+    expected_cols = ["Sr", "Symbol", "Price", "Change %", "Volume", "Volume Surge", "RSI", "EMA 20", "EMA 50", "EMA 200", "ATR"]
     if latest_df.empty:
-        return pd.DataFrame(), {"as_of_date": "N/A", "total_universe": 0, "matched_count": 0}
+        return pd.DataFrame(columns=expected_cols), {"as_of_date": "N/A", "total_universe": 0, "matched_count": 0}
 
     as_of_str = str(latest_df['trade_date'].iloc[0])
     scan_meta = CHARTINK_SCANNERS.get(scanner_name, CHARTINK_SCANNERS["🌐 All Scanned Stocks (Full Universe)"])
@@ -324,7 +397,7 @@ def run_chartink_scan(scanner_name: str, force_refresh: bool = False) -> Tuple[p
             "ATR": float(r['atr14'])
         })
 
-    res_df = pd.DataFrame(results)
+    res_df = pd.DataFrame(results, columns=expected_cols) if results else pd.DataFrame(columns=expected_cols)
     meta = {
         "as_of_date": as_of_str,
         "total_universe": len(latest_df),
@@ -346,33 +419,47 @@ def get_market_breadth_stats(latest_df: Optional[pd.DataFrame] = None) -> Dict[s
 
     if latest_df is None or latest_df.empty:
         return {
-            "pct_above_20_ema": 50.0,
-            "pct_above_50_ema": 50.0,
-            "pct_above_200_ema": 50.0,
-            "adv_dec_ratio": "1.00",
+            "pct_above_20_ema": 0.0,
+            "pct_above_50_ema": 0.0,
+            "pct_above_200_ema": 0.0,
+            "above_200": 0,
+            "eligible_200_count": 0,
+            "above_50": 0,
+            "eligible_50_count": 0,
+            "above_20": 0,
+            "eligible_20_count": 0,
+            "adv_dec_ratio": "DATA UNAVAILABLE",
             "advances": 0,
             "declines": 0,
             "unchanged": 0,
             "total_universe": 0,
-            "as_of_date": "N/A",
-            "market_regime": "AWAITING BHAVCOPY DATA",
+            "as_of_date": "DATA UNAVAILABLE",
+            "market_regime": "DATA UNAVAILABLE",
             "regime_color": "#64748B"
         }
 
     total = len(latest_df)
     as_of_date = str(latest_df['trade_date'].iloc[0])
 
-    above_20 = int((latest_df['close'] > latest_df['ema20']).sum())
-    above_50 = int((latest_df['close'] > latest_df['ema50']).sum())
-    above_200 = int((latest_df['close'] > latest_df['ema200']).sum())
+    # Indicator validity: calculate % against eligible stocks with sufficient history
+    valid_20 = latest_df['ema20'].notna()
+    eligible_20 = int(valid_20.sum())
+    above_20 = int((latest_df.loc[valid_20, 'close'] > latest_df.loc[valid_20, 'ema20']).sum())
+    pct_20 = round((above_20 / eligible_20) * 100.0, 1) if eligible_20 > 0 else 0.0
+
+    valid_50 = latest_df['ema50'].notna()
+    eligible_50 = int(valid_50.sum())
+    above_50 = int((latest_df.loc[valid_50, 'close'] > latest_df.loc[valid_50, 'ema50']).sum())
+    pct_50 = round((above_50 / eligible_50) * 100.0, 1) if eligible_50 > 0 else 0.0
+
+    valid_200 = latest_df['ema200'].notna()
+    eligible_200 = int(valid_200.sum())
+    above_200 = int((latest_df.loc[valid_200, 'close'] > latest_df.loc[valid_200, 'ema200']).sum())
+    pct_200 = round((above_200 / eligible_200) * 100.0, 1) if eligible_200 > 0 else 0.0
 
     advances = int((latest_df['close'] > latest_df['prev_close']).sum())
     declines = int((latest_df['close'] < latest_df['prev_close']).sum())
     unchanged = total - (advances + declines)
-
-    pct_20 = round((above_20 / max(total, 1)) * 100.0, 1)
-    pct_50 = round((above_50 / max(total, 1)) * 100.0, 1)
-    pct_200 = round((above_200 / max(total, 1)) * 100.0, 1)
 
     ad_ratio_num = round(advances / max(declines, 1), 2)
     if ad_ratio_num >= 1.5:
@@ -397,6 +484,12 @@ def get_market_breadth_stats(latest_df: Optional[pd.DataFrame] = None) -> Dict[s
         "pct_above_20_ema": pct_20,
         "pct_above_50_ema": pct_50,
         "pct_above_200_ema": pct_200,
+        "above_200": above_200,
+        "eligible_200_count": eligible_200,
+        "above_50": above_50,
+        "eligible_50_count": eligible_50,
+        "above_20": above_20,
+        "eligible_20_count": eligible_20,
         "adv_dec_ratio": ad_str,
         "advances": advances,
         "declines": declines,

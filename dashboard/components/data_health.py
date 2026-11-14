@@ -8,10 +8,21 @@ import streamlit as st
 import pandas as pd
 from typing import Dict, Any
 
+def _safe_float(val, default=None):
+    if val is None or val in ("", "N/A", "None"):
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
 def render_data_health_panel(live_snap: Dict[str, Any]) -> None:
     """Renders expandable Data Health & Provenance panel."""
+    if not live_snap or not isinstance(live_snap, dict):
+        live_snap = {}
+
     with st.expander("🛡️ Data Health & Exchange Feed Provenance (Zero Fake Fallbacks)", expanded=False):
-        mcp_stats = live_snap.get("mcp_stats", {})
+        mcp_stats = live_snap.get("mcp_stats") or {}
         quotes_served = mcp_stats.get("quotes_served", 0)
         errors_count = mcp_stats.get("errors_count", 0)
         sessions_created = mcp_stats.get("sessions_created", 0)
@@ -21,33 +32,34 @@ def render_data_health_panel(live_snap: Dict[str, Any]) -> None:
         c1.metric("Official NSE MCP Quotes Served", f"{quotes_served:,}")
         c2.metric("NSE MCP Active Sessions", f"{sessions_created}")
         c3.metric("MCP Recovered Fallbacks", f"{errors_count}")
-        c4.metric("Session Mode", live_snap.get("session_status", "UNKNOWN"))
+        c4.metric("Session Mode", live_snap.get("session_status", "DATA UNAVAILABLE"))
 
         # Build feed health table
         feeds = [
-            ("NIFTY 50 Spot", live_snap.get("nifty", {})),
-            ("BANK NIFTY Spot", live_snap.get("banknifty", {})),
-            ("SENSEX Spot", live_snap.get("sensex", {})),
-            ("GIFT NIFTY Derivatives", live_snap.get("giftnifty", {})),
-            ("India VIX Volatility", live_snap.get("vix", {})),
-            ("WTI Crude Oil (CL=F)", live_snap.get("crude", {})),
-            ("USD/INR Spot (USDINR=X)", live_snap.get("usdinr", {})),
-            ("US S&P 500 E-mini (ES=F)", live_snap.get("sp500", {})),
+            ("NIFTY 50 Spot", live_snap.get("nifty") or {}),
+            ("BANK NIFTY Spot", live_snap.get("banknifty") or {}),
+            ("SENSEX Spot", live_snap.get("sensex") or {}),
+            ("GIFT NIFTY Derivatives", live_snap.get("giftnifty") or {}),
+            ("India VIX Volatility", live_snap.get("vix") or {}),
+            ("WTI Crude Oil (CL=F)", live_snap.get("crude") or {}),
+            ("USD/INR Spot (USDINR=X)", live_snap.get("usdinr") or {}),
+            ("US S&P 500 E-mini (ES=F)", live_snap.get("sp500") or {}),
         ]
 
         feed_rows = []
         for name, q in feeds:
-            src = q.get("source", "UNKNOWN")
-            ts = q.get("ts_ist", "N/A")
+            q = q or {}
+            src = q.get("source", "DATA UNAVAILABLE")
+            ts = q.get("ts_ist", "DATA UNAVAILABLE")
             age = q.get("age_sec")
             is_stale = q.get("is_stale", False)
-            val = q.get("value") or q.get("last")
-            val_str = f"{float(val):,.2f}" if val is not None else "N/A"
+            val = _safe_float(q.get("value") or q.get("last"))
+            val_str = f"{val:,.2f}" if val is not None else "DATA UNAVAILABLE"
 
             if is_stale:
                 status_pill = "🔴 STALE (>300s)"
             elif val is None:
-                status_pill = "⚪ OFFLINE"
+                status_pill = "⚪ DATA UNAVAILABLE"
             else:
                 status_pill = "🟢 VERIFIED LIVE"
 

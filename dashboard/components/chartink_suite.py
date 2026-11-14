@@ -160,17 +160,17 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 20 EMA</div>
                 <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{breadth.get('pct_above_20_ema', 0.0)}%</div>
-                <div style="font-size:9.5px; color:#64748B;">Short-Term Push</div>
+                <div style="font-size:9.5px; color:#64748B;">{breadth.get('above_20', 0)}/{breadth.get('eligible_20_count', 0)} eligible (≥20d)</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 50 EMA</div>
                 <div style="font-size:20px; font-weight:900; color:#00F0FF; margin:2px 0;">{breadth.get('pct_above_50_ema', 0.0)}%</div>
-                <div style="font-size:9.5px; color:#64748B;">Structural Base</div>
+                <div style="font-size:9.5px; color:#64748B;">{breadth.get('above_50', 0)}/{breadth.get('eligible_50_count', 0)} eligible (≥50d)</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 200 EMA</div>
                 <div style="font-size:20px; font-weight:900; color:#F59E0B; margin:2px 0;">{breadth.get('pct_above_200_ema', 0.0)}%</div>
-                <div style="font-size:9.5px; color:#64748B;">Macro Bull Base</div>
+                <div style="font-size:9.5px; color:#64748B;">{breadth.get('above_200', 0)}/{breadth.get('eligible_200_count', 0)} eligible (≥200d)</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">ADVANCE / DECLINE</div>
@@ -222,6 +222,9 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
         </div>
         <div style="font-size:11px; color:#94A3B8; margin-top:8px;">
             <b>Scan Logic:</b> {html.escape(active_cat.get('desc', ''))}
+        </div>
+        <div style="font-size:11px; color:#FCD34D; margin-top:8px; font-family:'JetBrains Mono', monospace; background:rgba(245,158,11,0.08); padding:6px 10px; border-radius:6px; border:1px solid rgba(245,158,11,0.2);">
+            ⚠️ <b>Screening Note:</b> {html.escape(active_cat.get('note', 'Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.'))}
         </div>
     </div>
     """)

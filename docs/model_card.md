@@ -107,3 +107,4 @@ $$\mathbb{E}[\text{Payoff}] = (P_{\text{direction}} \times \text{Expected Gap Pt
 2. **Volatility Crush (IV Collapse)**: Following major anticipated binary events (Union Budget, general election results, RBI monetary policy), an index gap in the predicted direction may still yield net negative option P&L due to sharp post-open IV compression.
 3. **Stale Data Feeds**: `yfinance` endpoints are delayed up to 15 minutes. In high-volatility close auctions (15:20–15:30 IST), closing prices may diverge from the 15:15 snapshot.
 4. **Regime Shifts**: Structural changes in index constituent weightings, liquidity conditions, or global macroeconomic correlation can reduce model predictive power until the walk-forward retraining window incorporates the new regime.
+

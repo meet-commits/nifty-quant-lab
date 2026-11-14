@@ -45,7 +45,7 @@ class TestDashboardResilience(unittest.TestCase):
         """When market is offline or snapshot empty, story engine must return clean offline state without crashing."""
         from macro_story_engine import build_comprehensive_market_story
         story = build_comprehensive_market_story({})
-        self.assertEqual(story["regime_badge"], "FEED OFFLINE / AWAITING DATA")
+        self.assertEqual(story["regime_badge"], "DATA UNAVAILABLE")
         self.assertIn("unavailable", story["headline"].lower())
 
     def test_truth_in_data_no_synthetic_options(self):
@@ -89,6 +89,17 @@ class TestDashboardResilience(unittest.TestCase):
         at = AppTest.from_file(app_path, default_timeout=60)
         at.run()
         self.assertEqual(len(at.exception), 0, f"AppTest raised exceptions: {at.exception}")
+
+    def test_apptest_snapshot_none_resilience(self):
+        """AppTest test where live snapshot returns None: assert app renders with 0 unhandled exceptions."""
+        from unittest.mock import patch
+        from streamlit.testing.v1 import AppTest
+        app_path = os.path.join(DASH_DIR, "app.py")
+
+        with patch("live_market_service.fetch_live_market_snapshot", return_value=None):
+            at = AppTest.from_file(app_path, default_timeout=60)
+            at.run()
+            self.assertEqual(len(at.exception), 0, f"AppTest raised exceptions when snapshot is None: {at.exception}")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ name: Test Suite & Linter
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "**" ]
   pull_request:
     branches: [ "main" ]
 
@@ -36,3 +36,4 @@ jobs:
       - name: Execute Pytest Suite
         run: |
           pytest tests/ -v
+
