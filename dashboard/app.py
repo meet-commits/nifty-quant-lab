@@ -356,8 +356,15 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
             label_visibility="collapsed"
         )
 
-        macro_story = build_comprehensive_market_story(live_snap, selected_asset)
-        current = build_current_index_data(live_snap, selected_asset, macro_story)
+        try:
+            macro_story = build_comprehensive_market_story(live_snap, selected_asset)
+        except Exception:
+            macro_story = {}
+
+        try:
+            current = build_current_index_data(live_snap, selected_asset, macro_story)
+        except Exception:
+            current = {}
 
         # 3. Dual-Horizon Overnight Gap Forecast
         render_gap_forecast_card(live_snap)
