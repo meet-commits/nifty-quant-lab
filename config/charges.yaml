@@ -1,0 +1,28 @@
+# config/charges.yaml
+# Statutory Indian Market Transaction Friction & Exchange Costs
+# References: SEBI, NSE Circulars, Union Budget 2024 Amendments
+
+equity_options:
+  # STT: 0.1% on Option Sell Turnover (revised Union Budget 2024 from 0.0625%)
+  stt_sell_turnover: 0.0010
+  
+  # Exchange Turnover Charges: NSE charges ~0.05% on premium turnover
+  exchange_turnover: 0.0005
+  
+  # GST: 18% applied on exchange turnover charges and brokerage
+  gst_rate: 0.18
+  
+  # Stamp Duty: 0.003% on buy side premium turnover
+  stamp_duty_buy: 0.00003
+  
+  # Execution Slippage: Average half-spread execution cost per leg
+  slippage_pct: 0.015
+  
+  # Standard Contract Lot Size for Nifty 50 Index Options (effective Nov 2024: 25)
+  nifty_lot_size: 25
+  banknifty_lot_size: 15
+  sensex_lot_size: 10
+
+# Risk-Free Interest Rate for Black-Scholes Option Pricing
+# RBI 91-day Treasury Bill yield benchmark
+risk_free_rate: 0.065

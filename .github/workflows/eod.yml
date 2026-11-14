@@ -35,10 +35,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/market_data.parquet data/research.duckdb
+          git add data/market_data.parquet data/research.duckdb data/predictions_log.parquet
           if git diff --staged --quiet; then
             echo "No changes in market archive."
           else
             git commit -m "chore(data): automated EOD session archival [skip ci]"
             git push origin main
           fi
+

@@ -1,6 +1,8 @@
 """
 src/data_pipeline.py
-Purpose: Market data ingestion & storage using DuckDB & Parquet.
+Purpose: Quantitative market data ingestion & storage using DuckDB & Parquet.
+Maintains ~10 years of historical daily bars across Indian Indices, Global Catalysts,
+and Asian Cues without lookahead bias.
 """
 
 import os
@@ -17,18 +19,22 @@ PARQUET_PATH = os.path.join(DATA_DIR, "market_data.parquet")
 TICKER_MAP = {
     "NIFTY_SPOT": "^NSEI",          # Nifty 50 Index
     "BANKNIFTY_SPOT": "^NSEBANK",    # Nifty Bank Index
+    "SENSEX_SPOT": "^BSESN",        # BSE Sensex Index
     "INDIA_VIX": "^INDIAVIX",       # India Volatility Index
     "SP500_FUT": "ES=F",            # US S&P 500 E-mini futures
-    "CRUDE_OIL": "CL=F",            # WTI Crude Oil
-    "USD_INR": "USDINR=X"           # USD to INR exchange rate
+    "SP500_INDEX": "^GSPC",         # US S&P 500 Cash Index
+    "CRUDE_OIL": "CL=F",            # WTI Crude Oil Futures
+    "USD_INR": "USDINR=X",          # USD to INR exchange rate
+    "NIKKEI_225": "^N225",          # Japan Nikkei 225 Index (Closes 11:30 AM IST)
+    "HANG_SENG": "^HSI"             # Hong Kong Hang Seng Index (Closes 13:30 IST)
 }
 
-def fetch_and_sync_daily_data(lookback_days: int = 730) -> pd.DataFrame:
+def fetch_and_sync_daily_data(lookback_days: int = 3650) -> pd.DataFrame:
     """
-    Downloads historical EOD data for research tickers, standardizes columns,
+    Downloads ~10 years of historical EOD data for research tickers, standardizes columns,
     and stores cleanly into DuckDB and Parquet format.
     """
-    print(f"🔄 Fetching {lookback_days} days of market data from Yahoo Finance...")
+    print(f"🔄 Fetching ~{lookback_days // 365} years ({lookback_days} days) of market data from Yahoo Finance...")
     end_date = datetime.now()
     start_date = end_date - timedelta(days=lookback_days)
 
@@ -41,22 +47,19 @@ def fetch_and_sync_daily_data(lookback_days: int = 730) -> pd.DataFrame:
                 print(f"  ⚠️ Warning: No data returned for {symbol}")
                 continue
 
-            # In newer yfinance versions, df.columns might be MultiIndex if single ticker or tuple
+            # In newer yfinance versions, df.columns might be MultiIndex
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
             df = df.reset_index()
-            # Standardize column names to lowercase
             df.columns = [str(c).lower() for c in df.columns]
             
-            # Ensure 'date' column is present
             if 'date' not in df.columns and 'datetime' in df.columns:
                 df.rename(columns={'datetime': 'date'}, inplace=True)
                 
             df['date'] = pd.to_datetime(df['date']).dt.date
             df['symbol'] = friendly_name
             
-            # Select required columns
             df_clean = df[['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']].copy()
             df_clean['open'] = df_clean['open'].astype(float)
             df_clean['high'] = df_clean['high'].astype(float)

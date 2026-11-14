@@ -155,3 +155,4 @@ def make_quote(
         is_real=is_real,
         metadata=metadata or {}
     )
+

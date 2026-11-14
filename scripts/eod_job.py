@@ -192,6 +192,18 @@ def run_eod_pipeline(force: bool = False, target_date_str: str = None) -> bool:
         parquet_size_kb = os.path.getsize(PARQUET_PATH) / 1024.0
         logger.info(f"✅ Parquet archive successfully exported ({parquet_size_kb:.1f} KB).")
 
+        # Update forward-test outcomes for logged predictions
+        try:
+            src_dir = os.path.join(BASE_DIR, "src")
+            if src_dir not in sys.path:
+                sys.path.append(src_dir)
+            from gap_prediction_service import update_forward_test_outcomes
+            updated_log = update_forward_test_outcomes()
+            if not updated_log.empty:
+                logger.info(f"✅ Forward test scoreboard updated ({len(updated_log)} logged predictions).")
+        except Exception as e:
+            logger.warning(f"Could not update forward test log: {e}")
+
     finally:
         con.close()
 
@@ -207,3 +219,4 @@ if __name__ == "__main__":
 
     success = run_eod_pipeline(force=args.force, target_date_str=args.date)
     sys.exit(0 if success else 1)
+

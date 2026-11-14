@@ -425,9 +425,31 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         label_visibility="collapsed"
     )
 
-    # 1.5. 🌙 KAL KA GAP FORECAST (3:15 PM EOD MACHINE LEARNING PREDICTOR)
-    gap_fc = compute_overnight_gap_forecast(live_snap)
+    # 1.5. 🌙 KAL KA OVERNIGHT GAP FORECAST (DUAL HORIZON: 3:15 PM EOD & 08:45 AM PRE-OPEN)
+    fc_col1, fc_col2 = st.columns([2.5, 1.5])
+    with fc_col1:
+        selected_fc_mode = st.radio(
+            "Forecast Horizon Model:",
+            ["🕒 15:15 PM EOD Model (Strict Pre-15:30 IST Data)", "🌅 08:45 AM Pre-Open Nowcast (Overnight US + GIFT Basis)"],
+            horizontal=True,
+            label_visibility="collapsed"
+        )
+    with fc_col2:
+        model_type_key = "eod_1515" if "15:15" in selected_fc_mode else "preopen_0845"
+        manual_gift_in = None
+        if model_type_key == "preopen_0845":
+            manual_gift_in = st.number_input(
+                "Manual GIFT Nifty Override (Optional):",
+                value=float(g_close or 0.0),
+                step=5.0,
+                format="%.1f",
+                label_visibility="collapsed"
+            )
+
+    gap_fc = compute_overnight_gap_forecast(live_snap, model_type=model_type_key, manual_gift_price=manual_gift_in)
     fc_cat_bullets = "".join([f"<li style='margin-bottom:4px;'>{c}</li>" for c in gap_fc['catalysts']])
+    be_call = gap_fc.get('breakeven_call', {})
+    be_put = gap_fc.get('breakeven_put', {})
 
     st.html(f"""
     <div class="monolith-card-gold" style="padding:20px; margin-bottom:18px; border-top: 3px solid {gap_fc['signal_color']};">
@@ -436,10 +458,10 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
                 <span style="font-size:26px;">🌙</span>
                 <div>
                     <span class="font-syncopate" style="font-size:13px; font-weight:700; color:#FFFFFF; letter-spacing:2px;">
-                        KAL KA OVERNIGHT GAP FORECAST <span style="font-size:10px; color:#FCD34D;">(3:15 PM EOD PREDICTOR)</span>
+                        KAL KA OVERNIGHT GAP FORECAST <span style="font-size:10px; color:#FCD34D;">({'3:15 PM EOD HORIZON' if model_type_key=='eod_1515' else '08:45 AM PRE-OPEN NOWCAST'})</span>
                     </span>
                     <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#94A3B8; letter-spacing:1px;">
-                        WALK-FORWARD ML (XGBOOST) • PURE OUT-OF-SAMPLE PROBABILITY ENGINE
+                        CALIBRATED 3-CLASS ML + QUANTILE REGRESSION + BLACK-SCHOLES THETA HURDLE
                     </div>
                 </div>
             </div>
@@ -448,26 +470,37 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
             </span>
         </div>
 
-        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:16px;">
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
             <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(16,185,129,0.3); text-align:center;">
-                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(OVERNIGHT GAP UP)</div>
-                <div style="font-size:32px; font-weight:900; color:#10B981; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_up_pct']}%</div>
-                <div style="font-size:10px; color:#6EE7B7;">Out-of-sample ML Calibration</div>
-            </div>
-            <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(244,63,94,0.3); text-align:center;">
-                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(OVERNIGHT GAP DOWN)</div>
-                <div style="font-size:32px; font-weight:900; color:#F43F5E; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_down_pct']}%</div>
-                <div style="font-size:10px; color:#FDA4AF;">Downside Probability Floor</div>
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(GAP UP &ge; +0.25%)</div>
+                <div style="font-size:30px; font-weight:900; color:#10B981; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_up_pct']}%</div>
+                <div style="font-size:10px; color:#6EE7B7;">Calibrated Up Move</div>
             </div>
             <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(245,158,11,0.3); text-align:center;">
-                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">EXPECTED OPEN GAP RANGE</div>
-                <div style="font-size:24px; font-weight:900; color:#FCD34D; font-family:'JetBrains Mono', monospace; margin:8px 0;">{gap_fc['expected_range_str']}</div>
-                <div style="font-size:10px; color:#FCD34D;">Based on {gap_fc['spot_reference']:,.0f} Spot</div>
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(FLAT CHOP &plusmn;0.25%)</div>
+                <div style="font-size:30px; font-weight:900; color:#FCD34D; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_flat_pct']}%</div>
+                <div style="font-size:10px; color:#FCD34D;">Overnight Theta Danger</div>
+            </div>
+            <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(244,63,94,0.3); text-align:center;">
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">P(GAP DOWN &le; -0.25%)</div>
+                <div style="font-size:30px; font-weight:900; color:#F43F5E; font-family:'JetBrains Mono', monospace; margin:4px 0;">{gap_fc['prob_down_pct']}%</div>
+                <div style="font-size:10px; color:#FDA4AF;">Calibrated Down Move</div>
             </div>
             <div style="background:rgba(0,0,0,0.5); padding:14px; border-radius:10px; border:1px solid rgba(0,240,255,0.3); text-align:center;">
-                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">3:15 PM EOD DECISION RULE</div>
-                <div style="font-size:13px; font-weight:800; color:#00F0FF; font-family:'JetBrains Mono', monospace; margin:10px 0; line-height:1.3;">{gap_fc['action_advice']}</div>
-                <div style="font-size:10px; color:#94A3B8;">Theta Decay Shield</div>
+                <div style="font-size:10px; color:#94A3B8; font-weight:800; font-family:'JetBrains Mono', monospace;">QUANTILE GAP RANGE (P10-P90)</div>
+                <div style="font-size:22px; font-weight:900; color:#00F0FF; font-family:'JetBrains Mono', monospace; margin:8px 0;">{gap_fc['expected_range_str']}</div>
+                <div style="font-size:10px; color:#94A3B8;">Quantile Pinball Calibration</div>
+            </div>
+        </div>
+
+        <div style="background:rgba(0,240,255,0.04); border-radius:10px; padding:12px 16px; border:1px solid rgba(0,240,255,0.15); margin-bottom:12px; font-family:'JetBrains Mono', monospace; font-size:11.5px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+            <div>
+                <b style="color:#00F0FF;">⚡ Black-Scholes Break-Even Hurdle:</b><br>
+                <span style="color:#CBD5E1;">ATM Call Breakeven: <b style="color:#10B981;">+{be_call.get('breakeven_gap_pts', 0)} pts</b> (Strike {be_call.get('atm_strike', 0):,.0f} • Theta -{be_call.get('overnight_theta_loss_pts', 0)} pts • Friction {be_call.get('friction_pts', 0)} pts)</span><br>
+                <span style="color:#CBD5E1;">ATM Put Breakeven: <b style="color:#F43F5E;">-{be_put.get('breakeven_gap_pts', 0)} pts</b> (Strike {be_put.get('atm_strike', 0):,.0f} • Theta -{be_put.get('overnight_theta_loss_pts', 0)} pts • Friction {be_put.get('friction_pts', 0)} pts)</span>
+            </div>
+            <div style="align-self:center; background:rgba(0,0,0,0.4); padding:8px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.08); font-size:11px;">
+                <b style="color:#FFFFFF;">DECISION RULE:</b> <span style="color:#FCD34D;">{gap_fc['action_advice']}</span>
             </div>
         </div>
 
@@ -477,16 +510,26 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
                 {fc_cat_bullets}
             </ul>
             <div style="border-top:1px solid rgba(255,255,255,0.05); margin-top:8px; padding-top:8px; display:flex; justify-content:space-between; flex-wrap:wrap; font-size:10.5px; color:#94A3B8;">
-                <span><b>Scientific Calibration:</b> Brier Score = <b style="color:#00F0FF;">{gap_fc['metrics']['brier_score']}</b> (vs 0.25 random)</span>
-                <span><b>Model OOS Accuracy:</b> <b style="color:#10B981;">{gap_fc['metrics']['model_accuracy']}%</b> (Beats Momentum Baseline: {gap_fc['metrics']['baseline_momentum_acc']}%)</span>
-                <span><b>Historical Archive:</b> {gap_fc['metrics']['total_historical_days']} Trading Days</span>
+                <span><b>Scientific Brier Score:</b> <b style="color:#00F0FF;">{gap_fc['metrics']['model_brier_score']}</b> (vs Prior Baseline: {gap_fc['metrics']['baseline_brier_prior']})</span>
+                <span><b>Model OOS Accuracy:</b> <b style="color:#10B981;">{gap_fc['metrics']['model_accuracy']}%</b> (CI: {gap_fc['metrics']['model_accuracy_ci'][0]}% - {gap_fc['metrics']['model_accuracy_ci'][1]}% • Beats Majority: {gap_fc['metrics']['baseline_majority_acc']}%)</span>
+                <span><b>Expanding Validation Archive:</b> {gap_fc['metrics']['total_test_sessions']} Out-of-Sample Sessions</span>
             </div>
         </div>
     </div>
     """)
 
-    with st.expander("📋 View Verifiable Prediction Scoreboard (Recent Out-of-Sample Sessions)", expanded=False):
-        st.dataframe(gap_fc["scoreboard_df"], use_container_width=True, hide_index=True)
+    with st.expander("📋 View Verifiable Prediction Scoreboards (Backtest vs Real Forward-Test Log)", expanded=False):
+        sb_tab1, sb_tab2 = st.tabs(["📋 Walk-Forward Out-of-Sample Backtest", "⚡ Real Live Forward-Test Log"])
+        with sb_tab1:
+            st.caption("Verifiable out-of-sample walk-forward predictions across historical sessions with expanding training windows.")
+            st.dataframe(gap_fc["scoreboard_df"], use_container_width=True, hide_index=True)
+        with sb_tab2:
+            st.caption("Live forward-test prediction log saved to data/predictions_log.parquet. Outcomes automatically filled after next session opens.")
+            fwd_df = gap_fc.get("forward_test_scoreboard_df", pd.DataFrame())
+            if not fwd_df.empty:
+                st.dataframe(fwd_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No forward-test logs recorded yet. Every live prediction is automatically archived here.")
 
     # 2. THE HUMAN MARKET STORY (100% DYNAMIC MULTI-PILLAR MACRO DOSSIER)
     macro_story = build_comprehensive_market_story(live_snap, selected_asset)
@@ -996,36 +1039,40 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
                 <div style="font-family:'Syncopate', sans-serif; font-size:12px; font-weight:700; color:#FFFFFF;">
-                    WALK-FORWARD ACCURACY & INDIAN TRANSACTION FRICTION AUDIT
+                    EXPANDING WALK-FORWARD ACCURACY & BLACK-SCHOLES FRICTION AUDIT
                 </div>
                 <div style="font-size:12px; color:#94A3B8; margin-top:2px;">
-                    Strict walk-forward evaluation on 489 historical sessions (DuckDB). Accounts for statutory STT (0.1% on options sell premium), NSE turnover, 18% GST, and slippage. Option P&L modeled via Delta (0.50) / Theta (-7.5 pts).
+                    Strict expanding-window walk-forward evaluation on 2,000+ out-of-sample historical sessions (~10-year DuckDB archive). Options pricing evaluated via continuous Black-Scholes model (ATM strike, India VIX as IV, calendar-day theta decay, and statutory STT/GST/charges loaded from config/charges.yaml).
                 </div>
             </div>
         </div>
     </div>
     """)
 
-    if st.button("🚀 Run Walk-Forward Validation On Historical Data (DuckDB Archive)", type="primary"):
-        with st.spinner("Processing features and calculating post-friction net P&L..."):
+    if st.button("🚀 Run Expanding Walk-Forward Validation On Historical Archive (~10 Years)", type="primary"):
+        with st.spinner("Executing expanding walk-forward folds and calculating Black-Scholes options equity curve..."):
             try:
                 df_features = build_feature_matrix()
-                res_df, model_metrics = train_and_evaluate_walk_forward(df=df_features)
+                res_df, model_metrics = train_and_evaluate_walk_forward(df=df_features, initial_train_window=600, step_size=50)
                 trades_df, b_summary = run_realistic_backtest(predictions_df=res_df)
 
-                total_index_pts = sum(
-                    (row['actual_gap_pct'] / 100.0) * row['nifty_close'] * (1 if row['predicted_prob_up'] >= 0.50 else -1)
-                    for _, row in res_df.iterrows()
-                )
-                
                 c_m1, c_m2, c_m3, c_m4, c_m5 = st.columns(5)
-                c_m1.metric("Out-of-Sample ROC-AUC", f"{model_metrics['roc_auc_score']}")
-                c_m2.metric("Index Gap Pts Captured", f"{total_index_pts:+,.0f} pts")
-                c_m3.metric("Post-Cost Net Return", f"{b_summary['net_return_pct']}%")
-                c_m4.metric("Post-Cost Win Rate", f"{b_summary['win_rate_pct']}%")
-                c_m5.metric("Friction Paid (STT+Slip)", f"₹{b_summary['total_friction_paid_inr']:,.0f}")
-                
-                fig_eq = px.line(trades_df, x="date", y="capital_after_trade", title="Net Equity Curve (After Indian Taxes & Slippage)")
+                c_m1.metric(
+                    "3-Class Accuracy",
+                    f"{model_metrics['model_accuracy']}%",
+                    delta=f"{model_metrics['model_accuracy'] - model_metrics['baseline_majority_acc']:+.1f}% vs Prior"
+                )
+                c_m2.metric(
+                    "Brier Calibration",
+                    f"{model_metrics['model_brier_score']}",
+                    delta=f"{model_metrics['model_brier_score'] - model_metrics['baseline_brier_prior']:.4f} vs Prior",
+                    delta_color="inverse"
+                )
+                c_m3.metric("Black-Scholes Net Return", f"{b_summary['net_return_pct']}%")
+                c_m4.metric("Post-Friction Win Rate", f"{b_summary['win_rate_pct']}%")
+                c_m5.metric("Statutory Friction Paid", f"₹{b_summary['total_friction_paid_inr']:,.0f}")
+
+                fig_eq = px.line(trades_df, x="date", y="capital_after_trade", title="Net Equity Curve (Black-Scholes Greeks + Statutory Indian Friction)")
                 fig_eq.update_layout(template="plotly_dark", height=280, paper_bgcolor='#000000', plot_bgcolor='#000000')
                 st.plotly_chart(fig_eq, use_container_width=True)
             except Exception as e:
