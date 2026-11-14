@@ -9,9 +9,7 @@ Displays 3-class calibrated probabilities, quantile points [P10, P50, P90],
 and Black-Scholes overnight option break-even hurdle.
 """
 
-import html
 import streamlit as st
-import pandas as pd
 from typing import Dict, Any
 
 from gap_prediction_service import compute_overnight_gap_forecast, update_forward_test_outcomes
@@ -56,10 +54,10 @@ def render_gap_forecast_card(live_snap: Dict[str, Any]) -> None:
         q10 = gap_fc.get("q10_pts", 0.0)
         q50 = gap_fc.get("q50_pts", 0.0)
         q90 = gap_fc.get("q90_pts", 0.0)
-        
+
         raw_advice = gap_fc.get("action_advice", "")
         raw_signal = gap_fc.get("signal_badge", "")
-        
+
         be_call = gap_fc.get("breakeven_call", {})
         be_put = gap_fc.get("breakeven_put", {})
         be_call_pts = be_call.get("breakeven_gap_pts", 35.0)

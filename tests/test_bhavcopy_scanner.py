@@ -8,7 +8,6 @@ import os
 import sys
 import unittest
 import duckdb
-import numpy as np
 import pandas as pd
 from datetime import date, timedelta
 
@@ -18,23 +17,16 @@ if SRC_DIR not in sys.path:
 
 from chartink_engine import (
     calc_rsi,
-    calc_atr,
     compute_universe_indicators,
     scan_volume_surge_momentum,
     scan_trend_leader_highs,
     scan_rsi_oversold_dips,
-    scan_ema_confluence,
-    scan_darvas_box_breakout,
-    scan_bearish_breakdown,
-    scan_full_universe,
     run_chartink_scan,
-    get_market_breadth_stats,
-    CHARTINK_SCANNERS
+    get_market_breadth_stats
 )
 from bhavcopy_service import (
     init_bhavcopy_table,
-    save_bhavcopy_records,
-    get_db_connection
+    save_bhavcopy_records
 )
 
 
@@ -180,13 +172,13 @@ class TestBhavcopyScanner(unittest.TestCase):
     def test_zero_fake_columns_in_scan_results(self):
         """Scanned output DataFrame must NEVER contain hardcoded conviction/target/stop-loss columns."""
         res_df, meta = run_chartink_scan("⚡ Volume Surge & Momentum Breakout")
-        
+
         # Prohibited synthetic/hardcoded column names
         forbidden = [
             "target", "target2", "t1", "t2", "reference r1", "reference r2",
             "sl", "stop loss", "reference s1", "rr", "r:r", "conviction", "conv", "strength"
         ]
-        
+
         for col in res_df.columns:
             self.assertNotIn(col.lower().strip(), forbidden, f"Forbidden synthetic column '{col}' found in scan result!")
 

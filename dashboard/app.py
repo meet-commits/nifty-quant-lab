@@ -7,9 +7,7 @@ Zero synthetic fallbacks, truth-in-data verified exchange feeds.
 
 import os
 import sys
-import html
 import streamlit as st
-import pandas as pd
 
 # Setup system path
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

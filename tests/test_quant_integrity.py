@@ -13,16 +13,15 @@ Validates:
 import os
 import sys
 import unittest
-from datetime import datetime, timedelta, time as dtime
-from zoneinfo import ZoneInfo
-from unittest.mock import patch, MagicMock
+from datetime import datetime, timedelta
+from unittest.mock import patch
 
 SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 CONFIG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config"))
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from datapoint import Quote, make_quote
+from datapoint import make_quote
 from live_market_service import (
     calc_floor_pivots,
     get_market_session_status,

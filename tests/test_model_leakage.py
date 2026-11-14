@@ -15,7 +15,6 @@ import sys
 import unittest
 import numpy as np
 import pandas as pd
-from datetime import datetime
 
 SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 if SRC_DIR not in sys.path:
@@ -23,17 +22,14 @@ if SRC_DIR not in sys.path:
 
 from feature_engine import (
     build_feature_matrix,
-    extract_live_feature_vector,
     FEATURES_EOD_1515
 )
 from model_engine import (
     compute_multiclass_brier_score,
-    bootstrap_metric_ci,
-    fit_final_production_models
+    bootstrap_metric_ci
 )
 from backtest_engine import (
     black_scholes_price,
-    black_scholes_greeks,
     compute_option_breakeven
 )
 

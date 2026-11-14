@@ -15,7 +15,7 @@ import math
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 CHARGES_PATH = os.path.join(BASE_DIR, "config", "charges.yaml")
@@ -141,7 +141,7 @@ def compute_option_breakeven(
 
     entry_premium = black_scholes_price(spot, strike, t_years, r, iv, option_type)
     greeks = black_scholes_greeks(spot, strike, t_years, r, iv)
-    
+
     daily_theta = abs(greeks["call_theta_daily"] if option_type.lower() == "call" else greeks["put_theta_daily"])
     overnight_theta_loss = daily_theta * calendar_days_held
 

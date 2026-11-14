@@ -6,7 +6,7 @@ and constituent relationship is mathematically derived from verified snapshot va
 """
 
 import html
-from typing import Dict, List, Any, Tuple
+from typing import Dict, Any, Tuple
 
 def clamp_val(val: float, low: float, high: float) -> float:
     return max(low, min(high, val))
@@ -27,7 +27,7 @@ def compute_intraday_strength_score(spot: float, piv: float, day_high: float, da
     day_range = max(day_high - day_low, 1.0)
     range_pos = (spot - day_low) / day_range
     piv_proximity = 1.0 - min(abs(spot - piv) / day_range, 1.0)
-    
+
     score = (range_pos * 40.0) + (piv_proximity * 35.0) + (hw_adv_ratio * 25.0)
     return round(clamp_val(score, 5.0, 95.0), 1)
 
@@ -310,7 +310,7 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
             "rr_ratio": rr_ratio
         }
 
-    except Exception as err:
+    except Exception:
         return {
             "headline": f"<b>{html.escape(str(asset_name))}</b> Market Regime Intelligence Initializing...",
             "regime_badge": "DATA STREAM INITIALIZING",

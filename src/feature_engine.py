@@ -22,8 +22,8 @@ import os
 import duckdb
 import numpy as np
 import pandas as pd
-from datetime import datetime, date
-from typing import Tuple, Dict, Any, List, Optional
+from datetime import datetime
+from typing import Tuple, Dict, Any, Optional
 
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")

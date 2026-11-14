@@ -8,9 +8,9 @@ import os
 import duckdb
 import numpy as np
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime
 from zoneinfo import ZoneInfo
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Dict, Any, Optional
 
 try:
     import streamlit as st
@@ -21,9 +21,7 @@ except Exception:
 
 from feature_engine import (
     build_feature_matrix,
-    extract_live_feature_vector,
-    FEATURES_EOD_1515,
-    FEATURES_PREOPEN_0845
+    extract_live_feature_vector
 )
 from model_engine import (
     train_and_evaluate_walk_forward,
@@ -305,9 +303,9 @@ def compute_overnight_gap_forecast(
 
     vix_above = float(live_features_df.get('vix_above_ma5', pd.Series([0.0])).iloc[0])
     if vix_above > 0.5:
-        catalysts.append(f"India VIX Elevated: Volatility is trending above its 5-day moving average (Option sellers charging higher premiums).")
+        catalysts.append("India VIX Elevated: Volatility is trending above its 5-day moving average (Option sellers charging higher premiums).")
     else:
-        catalysts.append(f"India VIX Subdued: Volatility below 5-day average indicates low systemic hedging stress.")
+        catalysts.append("India VIX Subdued: Volatility below 5-day average indicates low systemic hedging stress.")
 
     if model_type == "preopen_0845":
         g_basis = float(live_features_df.get('gift_basis_pct', pd.Series([0.0])).iloc[0])

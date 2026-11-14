@@ -4,7 +4,6 @@ Intraday Convergence & Live 5m Candlestick Chart.
 Renames Tug-of-War to "Intraday Strength Score (heuristic)" with exact formula tooltip.
 """
 
-import html
 import streamlit as st
 import plotly.graph_objects as go
 from typing import Dict, Any

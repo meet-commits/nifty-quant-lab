@@ -6,7 +6,6 @@ Stores backtest results in st.session_state so they survive all reruns and fragm
 
 import streamlit as st
 import plotly.express as px
-from typing import Dict, Any
 
 from feature_engine import build_feature_matrix
 from model_engine import train_and_evaluate_walk_forward

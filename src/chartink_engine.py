@@ -8,11 +8,9 @@ Features:
 - Interactive Plotly Candlestick with Genuine OHLC, EMAs, and Wilder's RSI(14)
 """
 
-import os
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, date
 from typing import Dict, List, Tuple, Any, Optional
 
 try:

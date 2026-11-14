@@ -14,7 +14,7 @@ Integrates:
 import os
 import time
 import concurrent.futures
-from datetime import datetime, date, time as dtime
+from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Tuple, Any, Optional
 
@@ -44,7 +44,7 @@ def load_index_weights_map() -> Dict[str, List[Dict[str, Any]]]:
     """Loads index constituent weights from config/weights.csv."""
     if not os.path.exists(WEIGHTS_PATH):
         return {"NIFTY 50": HEAVYWEIGHT_META}
-    
+
     import csv
     weights_map: Dict[str, List[Dict[str, Any]]] = {}
     with open(WEIGHTS_PATH, mode="r", encoding="utf-8") as f:
@@ -246,7 +246,7 @@ def calc_floor_pivots(high: Optional[float], low: Optional[float], close: Option
     """
     if high is None or low is None or close is None or high <= 0 or low <= 0 or close <= 0:
         return {
-            "pivot": None, "s1": None, "sl": None, "s2": None, 
+            "pivot": None, "s1": None, "sl": None, "s2": None,
             "r1": None, "t1": None, "r2": None, "t2": None
         }
     p = (high + low + close) / 3.0

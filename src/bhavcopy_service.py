@@ -11,7 +11,7 @@ import csv
 import logging
 from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional
 import pandas as pd
 import duckdb
 import requests
@@ -79,17 +79,17 @@ def save_bhavcopy_records(records: List[Dict[str, Any]], con: Optional[duckdb.Du
 
     try:
         init_bhavcopy_table(con)
-        
+
         # Prepare bulk dataframe for fast ingestion
         df = pd.DataFrame(records)
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
-        
+
         # Idempotent upsert via delete + insert within a transaction
         con.execute("BEGIN TRANSACTION;")
         target_dates = [str(d) for d in df["trade_date"].unique()]
         for d in target_dates:
             con.execute("DELETE FROM bhavcopy_daily WHERE trade_date = ?;", [d])
-            
+
         con.register("df_insert", df)
         con.execute("""
             INSERT INTO bhavcopy_daily (trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover)
@@ -98,7 +98,7 @@ def save_bhavcopy_records(records: List[Dict[str, Any]], con: Optional[duckdb.Du
         """)
         con.unregister("df_insert")
         con.execute("COMMIT;")
-        
+
         return len(records)
     except Exception as e:
         con.execute("ROLLBACK;")
@@ -117,7 +117,7 @@ def fetch_fallback_nse_bhavcopy_csv(target_date: date) -> Optional[List[Dict[str
     d_str = target_date.strftime("%d%m%Y")
     date_iso = target_date.strftime("%Y-%m-%d")
     url = f"https://archives.nseindia.com/products/content/sec_bhavdata_full_{d_str}.csv"
-    
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "*/*"
@@ -221,7 +221,7 @@ def ensure_bhavcopy_seeded(min_sessions: int = 30) -> int:
             return distinct_sessions
 
         logger.info(f"DuckDB bhavcopy_daily has {distinct_sessions} sessions (< {min_sessions}). Seeding universe history...")
-        
+
         # Load all constituent symbols from weights.csv + liquid watchlist
         equities = [
             ("RELIANCE", 1324.40, 1.05), ("HDFCBANK", 804.00, 0.98), ("ICICIBANK", 1289.00, 1.10),
@@ -261,7 +261,7 @@ def ensure_bhavcopy_seeded(min_sessions: int = 30) -> int:
                 daily_pct = ((day_hash - 0.48) * 0.035) + ((trend_drift - 1.0) * 0.008)
                 prev_c = p
                 p = round(p * (1.0 + daily_pct), 2)
-                
+
                 h = round(p * (1.0 + (day_hash * 0.015)), 2)
                 l = round(p * (1.0 - ((1.0 - day_hash) * 0.015)), 2)
                 o = round((prev_c + p) / 2.0, 2)

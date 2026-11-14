@@ -4,7 +4,6 @@ Data Health & Provenance Panel:
 Surfaces feed source, timestamp, latency, staleness flag, and official NSE MCP served quote metrics.
 """
 
-import html
 import streamlit as st
 import pandas as pd
 from typing import Dict, Any

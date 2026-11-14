@@ -9,12 +9,12 @@ Displays constituents driven strictly by config/weights.csv with 'as of' date:
 
 import html
 import streamlit as st
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 def render_constituents_grid(selected_asset: str, live_snap: Dict[str, Any]) -> None:
     """Renders index-specific constituents cards loaded from config/weights.csv."""
     constituents_map = live_snap.get("constituents_by_index", {})
-    
+
     # Select appropriate index constituent list
     if selected_asset == "BANK NIFTY":
         idx_key = "BANK NIFTY"

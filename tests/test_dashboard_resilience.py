@@ -6,7 +6,6 @@ Resilience and UI Truth-in-Data tests for dashboard components and AppTest smoke
 import os
 import sys
 import unittest
-from unittest.mock import patch, MagicMock
 
 SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
 DASH_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dashboard"))

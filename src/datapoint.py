@@ -6,7 +6,7 @@ and safe fallback to None / "N/A" (never fake/static numbers).
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Optional, Dict, Any
 
@@ -71,7 +71,7 @@ class Quote:
         val = self.value
         p_str = self.format_pct(fallback="0.00%")
         c_str = self.format_chg(fallback="0.00")
-        
+
         return {
             "last": val if val is not None else 0.0,
             "value": val,

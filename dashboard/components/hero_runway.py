@@ -14,7 +14,7 @@ from typing import Dict, Any
 
 def render_hero_runway(current: Dict[str, Any], macro_story: Dict[str, Any], live_snap: Dict[str, Any]) -> None:
     """Renders the Institutional Dossier, Master Hero card, and 4 Reference Level Cards."""
-    
+
     # 1. Human Market Story Dossier
     regime_color = macro_story.get("regime_color", "#10B981")
     regime_badge = macro_story.get("regime_badge", "NEUTRAL REGIME")

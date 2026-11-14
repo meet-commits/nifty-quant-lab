@@ -5,12 +5,12 @@ Filters retail noise, verifies source tier, and scores institutional market impa
 """
 
 import re
-from typing import Dict, List
+from typing import Dict
 
 # Trusted Tier 1 Official & Financial Wires
 TRUSTED_SOURCES = [
-    "reuters", "bloomberg", "pti", "press trust of india", "economic times", 
-    "the economic times", "livemint", "mint", "business standard", 
+    "reuters", "bloomberg", "pti", "press trust of india", "economic times",
+    "the economic times", "livemint", "mint", "business standard",
     "ndtv profit", "financial express", "moneycontrol", "cnbc-tv18", "rbi", "sebi", "nse"
 ]
 
@@ -36,11 +36,11 @@ def verify_and_score_news(title: str, source: str = "") -> Dict:
     """
     title_lower = title.lower()
     source_lower = source.lower()
-    
+
     # 1. Source Credibility Check
     is_trusted_source = any(ts in source_lower for ts in TRUSTED_SOURCES)
     credibility_badge = "TIER 1 (OFFICIAL / VERIFIED)" if is_trusted_source else "TIER 2 (MEDIA REPORT)"
-    
+
     # Check for retail noise
     for np in NOISE_PATTERNS:
         if re.search(np, title_lower):
@@ -55,14 +55,14 @@ def verify_and_score_news(title: str, source: str = "") -> Dict:
                 "action": "IGNORE: Retail traps & broker opinions don't move Nifty.",
                 "color": "#64748B"
             }
-            
+
     # 2. Match against High-Impact Rules
     max_weight = 3.5
     matched_cat = "General Market Flow"
     move_est = "40 - 80 pts"
     action_note = "Standard market fluctuation; wait for Pivot floor test."
     badge_color = "#00F0FF"
-    
+
     for rule in HIGH_IMPACT_RULES:
         if re.search(rule["pattern"], title_lower):
             if rule["weight"] > max_weight:
@@ -70,7 +70,7 @@ def verify_and_score_news(title: str, source: str = "") -> Dict:
                 matched_cat = rule["cat"]
                 move_est = rule["move_pts"]
                 action_note = rule["verdict"]
-                
+
     if max_weight >= 8.5:
         impact_level = "HIGH IMPACT (INDEX MOVER)"
         badge_color = "#F43F5E"
@@ -80,7 +80,7 @@ def verify_and_score_news(title: str, source: str = "") -> Dict:
     else:
         impact_level = "LOW NOISE"
         badge_color = "#10B981"
-        
+
     return {
         "title": title,
         "source": source if source else "Financial Wire",

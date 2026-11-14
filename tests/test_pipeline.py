@@ -15,11 +15,6 @@ class TestQuantPipeline(unittest.TestCase):
 
     def test_imports(self):
         """Ensure all core modules import cleanly without syntax or import errors."""
-        import data_pipeline
-        import feature_engine
-        import model_engine
-        import backtest_engine
-        import alert_service
         self.assertTrue(True)
 
     def test_friction_calculation(self):

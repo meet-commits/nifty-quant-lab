@@ -18,7 +18,7 @@ import json
 import time
 import threading
 import requests
-from datetime import datetime, date
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Any, Optional
 
@@ -172,7 +172,7 @@ def _execute_mcp_tool_call(tool_name: str, arguments: Dict[str, Any], retry: boo
             # Session likely invalid, force reconnect
             with _LOCK:
                 _SESSION_EXPIRY = 0.0
-    except Exception as e:
+    except Exception:
         _STATS["errors"] += 1
         with _LOCK:
             _SESSION_EXPIRY = 0.0
@@ -276,7 +276,7 @@ def fetch_nse_mcp_bhavcopy(trade_date: Optional[datetime.date] = None) -> Option
     Returns normalized list of equity dictionary records or None on failure.
     """
     date_str = trade_date.strftime("%Y-%m-%d") if trade_date else datetime.now(IST).strftime("%Y-%m-%d")
-    
+
     # Tool call to Bhavcopy MCP endpoint
     res = _execute_mcp_tool_call("cm_get_bhavcopy", {"tradeDate": date_str, "segment": "CM"})
     if not res:
@@ -294,7 +294,7 @@ def fetch_nse_mcp_bhavcopy(trade_date: Optional[datetime.date] = None) -> Option
         raw_text = content[0]["text"]
         parsed = json.loads(raw_text)
         records = parsed.get("records") or parsed.get("data") or parsed.get("bhavcopy", [])
-        
+
         normalized = []
         for r in records:
             series = str(r.get("SERIES") or r.get("series") or "EQ").strip()
@@ -303,11 +303,11 @@ def fetch_nse_mcp_bhavcopy(trade_date: Optional[datetime.date] = None) -> Option
             sym = str(r.get("SYMBOL") or r.get("symbol") or "").strip().upper()
             if not sym:
                 continue
-            
+
             c = float(r.get("CLOSE") or r.get("closePrice") or r.get("lastPrice") or 0.0)
             if c <= 0.0:
                 continue
-                
+
             o = float(r.get("OPEN") or r.get("openPrice") or c)
             h = float(r.get("HIGH") or r.get("highPrice") or max(o, c))
             l = float(r.get("LOW") or r.get("lowPrice") or min(o, c))

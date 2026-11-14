@@ -1,0 +1,22 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "dashboard"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning"
+]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+exclude = [
+    ".git",
+    "__pycache__",
+    "venv",
+    ".venv",
+    "data"
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E402", "E501", "E741", "W291", "W293", "F841"]

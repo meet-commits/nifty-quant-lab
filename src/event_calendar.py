@@ -15,7 +15,7 @@ def get_next_weekly_expiry(base_date: datetime.date = None) -> Dict:
     """Calculates days left for next NSE Weekly Expiry (Thursday)."""
     if base_date is None:
         base_date = datetime.date.today()
-        
+
     days_ahead = (3 - base_date.weekday()) % 7  # Thursday is weekday 3
     if days_ahead == 0:
         # Today is expiry day
@@ -26,7 +26,7 @@ def get_next_weekly_expiry(base_date: datetime.date = None) -> Dict:
         target_expiry = base_date + datetime.timedelta(days=days_ahead)
         days_left = days_ahead
         status = f"{days_left} Days Left"
-        
+
     return {
         "event": "Weekly F&O Expiry",
         "date": target_expiry.strftime("%d %b %Y"),
@@ -39,9 +39,9 @@ def get_high_impact_events(base_date: datetime.date = None) -> List[Dict]:
     """Returns dynamic schedule of high-impact macroeconomic events."""
     if base_date is None:
         base_date = datetime.date.today()
-        
+
     weekly = get_next_weekly_expiry(base_date)
-    
+
     # Scheduled Macro Dates (Official Schedule)
     macro_schedule = [
         {"name": "RBI Monetary Policy", "target": datetime.date(2026, 12, 6), "desc": "Repo Rate Decision", "color": "#10B981"},
@@ -49,7 +49,7 @@ def get_high_impact_events(base_date: datetime.date = None) -> List[Dict]:
         {"name": "India CPI Inflation", "target": datetime.date(2026, 11, 12), "desc": "Macro Inflation Print", "color": "#FCD34D"},
         {"name": "Union Budget 2027", "target": datetime.date(2027, 2, 1), "desc": "Annual Fiscal Policy", "color": "#F43F5E"}
     ]
-    
+
     events = [weekly]
     for m in macro_schedule:
         days = (m["target"] - base_date).days
@@ -61,7 +61,7 @@ def get_high_impact_events(base_date: datetime.date = None) -> List[Dict]:
                 "impact": m["desc"],
                 "color": m["color"]
             })
-            
+
     return events
 
 if __name__ == "__main__":

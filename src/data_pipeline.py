@@ -53,13 +53,13 @@ def fetch_and_sync_daily_data(lookback_days: int = 3650) -> pd.DataFrame:
 
             df = df.reset_index()
             df.columns = [str(c).lower() for c in df.columns]
-            
+
             if 'date' not in df.columns and 'datetime' in df.columns:
                 df.rename(columns={'datetime': 'date'}, inplace=True)
-                
+
             df['date'] = pd.to_datetime(df['date']).dt.date
             df['symbol'] = friendly_name
-            
+
             df_clean = df[['date', 'symbol', 'open', 'high', 'low', 'close', 'volume']].copy()
             df_clean['open'] = df_clean['open'].astype(float)
             df_clean['high'] = df_clean['high'].astype(float)
@@ -85,7 +85,7 @@ def fetch_and_sync_daily_data(lookback_days: int = 3650) -> pd.DataFrame:
     con.execute("CREATE TABLE IF NOT EXISTS daily_prices (date DATE, symbol VARCHAR, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE);")
     con.execute("DELETE FROM daily_prices;")
     con.execute("INSERT INTO daily_prices SELECT * FROM combined;")
-    
+
     count = con.execute("SELECT count(*) FROM daily_prices;").fetchone()[0]
     distinct_dates = con.execute("SELECT count(distinct date) FROM daily_prices;").fetchone()[0]
     con.close()
