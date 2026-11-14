@@ -179,10 +179,8 @@ def log_live_prediction(prediction_record: Dict[str, Any]) -> None:
         # Avoid duplicate log entries for the same date and model_type
         if not df_log.empty and 'date' in df_log.columns and 'model_type' in df_log.columns:
             mask = (df_log['date'] == prediction_record['date']) & (df_log['model_type'] == prediction_record['model_type'])
-            if mask.any():
-                df_log.loc[mask, :] = new_row.values
-            else:
-                df_log = pd.concat([df_log, new_row], ignore_index=True)
+            df_log = df_log[~mask]
+            df_log = pd.concat([df_log, new_row], ignore_index=True)
         else:
             df_log = new_row
 

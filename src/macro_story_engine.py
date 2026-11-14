@@ -6,7 +6,7 @@ and constituent relationship is mathematically derived from verified snapshot va
 """
 
 import html
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 
 def clamp_val(val: float, low: float, high: float) -> float:
     return max(low, min(high, val))
@@ -49,6 +49,16 @@ def compute_dynamic_bull_bear_radar(spot: float, day_high: float, day_low: float
     bear_pct = 100 - bull_pct
     return bull_pct, bear_pct
 
+def _safe_float(val: Any, default: Optional[float] = None) -> Optional[float]:
+    """Safe conversion to float handling None, 'N/A', empty strings, and malformed inputs."""
+    if val is None or val in ("", "N/A", "None"):
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def _extract_constituent_pct(item: Any) -> float:
     """Safe extraction of constituent return as float. Never raises."""
     if not isinstance(item, dict):
@@ -69,13 +79,30 @@ def _extract_constituent_pct(item: Any) -> float:
     return 0.0
 
 
-def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str = "NIFTY 50") -> Dict[str, Any]:
+def build_comprehensive_market_story(snapshot: Optional[Dict[str, Any]], asset_name: str = "NIFTY 50") -> Dict[str, Any]:
     """
     Builds a factual 4-pillar quantitative regime summary for the selected asset.
     Statements are derived strictly from live snapshot metrics without speculative claims.
     Guaranteed never to crash or propagate exceptions.
     """
     try:
+        if not snapshot or not isinstance(snapshot, dict):
+            return {
+                "headline": f"<b>{html.escape(str(asset_name))}</b> feed is currently unavailable or awaiting market open.",
+                "regime_badge": "DATA UNAVAILABLE",
+                "regime_color": "#64748B",
+                "triggers": "Awaiting valid exchange session quotes to calculate algorithmic reference levels.",
+                "vix_status": "VIX data unavailable.",
+                "vix_explanation": "Implied volatility metrics unavailable.",
+                "macro_text": "Intermarket benchmarks unavailable.",
+                "heavyweight_text": "Constituent advance/decline distribution is currently offline.",
+                "strength_score": 50.0,
+                "conviction_pct": 50.0,
+                "bull_pct": 50,
+                "bear_pct": 50,
+                "rr_ratio": 1.0
+            }
+
         is_nifty = "NIFTY 50" in asset_name
         is_bank = "BANK" in asset_name
         is_sensex = "SENSEX" in asset_name
@@ -83,26 +110,26 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
 
         # Select appropriate asset quote dictionary
         if is_bank:
-            q = snapshot.get("banknifty", {})
+            q = snapshot.get("banknifty") or {}
             top_anchors = ["HDFCBANK", "ICICIBANK"]
         elif is_sensex:
-            q = snapshot.get("sensex", {})
+            q = snapshot.get("sensex") or {}
             top_anchors = ["RELIANCE", "HDFCBANK"]
         elif is_gift:
-            q = snapshot.get("giftnifty", {})
+            q = snapshot.get("giftnifty") or {}
             top_anchors = ["RELIANCE", "HDFCBANK"]
         else:
-            q = snapshot.get("nifty", {})
+            q = snapshot.get("nifty") or {}
             top_anchors = ["RELIANCE", "HDFCBANK"]
 
         spot_val = q.get("value") or q.get("last")
-        spot = float(spot_val) if spot_val is not None else None
+        spot = _safe_float(spot_val)
 
         # If feed has no valid spot price, return clean offline state
         if spot is None or spot <= 0.0:
             return {
-                "headline": f"<b>{html.escape(asset_name)}</b> feed is currently unavailable or awaiting market open.",
-                "regime_badge": "FEED OFFLINE / AWAITING DATA",
+                "headline": f"<b>{html.escape(str(asset_name))}</b> feed is currently unavailable or awaiting market open.",
+                "regime_badge": "DATA UNAVAILABLE",
                 "regime_color": "#64748B",
                 "triggers": "Awaiting valid exchange session quotes to calculate algorithmic reference levels.",
                 "vix_status": "VIX data pending exchange tick.",
@@ -116,12 +143,12 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
                 "rr_ratio": 1.0
             }
 
-        pct = float(q.get("chg_pct")) if q.get("chg_pct") is not None else 0.0
-        chg_pts = float(q.get("chg_pts")) if q.get("chg_pts") is not None else 0.0
+        pct = _safe_float(q.get("chg_pct"), 0.0)
+        chg_pts = _safe_float(q.get("chg_pts"), 0.0)
         raw_high = q.get("high")
         raw_low = q.get("low")
-        day_high = float(raw_high) if raw_high is not None else spot
-        day_low = float(raw_low) if raw_low is not None else spot
+        day_high = _safe_float(raw_high, spot)
+        day_low = _safe_float(raw_low, spot)
 
         # Defensive extraction for floor pivots (handles None safely)
         raw_sl = q.get("s1") or q.get("sl")
@@ -129,27 +156,27 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
         raw_t1 = q.get("r1") or q.get("t1")
         raw_t2 = q.get("r2") or q.get("t2")
 
-        sl = float(raw_sl) if raw_sl is not None else round(spot - 50.0, 1)
-        piv = float(raw_piv) if raw_piv is not None else round(spot, 1)
-        t1 = float(raw_t1) if raw_t1 is not None else round(spot + 50.0, 1)
-        t2 = float(raw_t2) if raw_t2 is not None else round(spot + 100.0, 1)
+        sl = _safe_float(raw_sl, round(spot - 50.0, 1))
+        piv = _safe_float(raw_piv, round(spot, 1))
+        t1 = _safe_float(raw_t1, round(spot + 50.0, 1))
+        t2 = _safe_float(raw_t2, round(spot + 100.0, 1))
 
         # Intermarket quotes
-        vix_q = snapshot.get("vix", {})
+        vix_q = snapshot.get("vix") or {}
         vix_val = vix_q.get("value") or vix_q.get("last")
-        vix_chg_pct = float(vix_q.get("chg_pct") or 0.0)
+        vix_chg_pct = _safe_float(vix_q.get("chg_pct"), 0.0)
 
-        crude_q = snapshot.get("crude", {})
+        crude_q = snapshot.get("crude") or {}
         crude_val = crude_q.get("value") or crude_q.get("last")
-        crude_chg_pct = float(crude_q.get("chg_pct") or 0.0)
+        crude_chg_pct = _safe_float(crude_q.get("chg_pct"), 0.0)
 
-        usdinr_q = snapshot.get("usdinr", {})
+        usdinr_q = snapshot.get("usdinr") or {}
         usd_val = usdinr_q.get("value") or usdinr_q.get("last")
-        usd_chg_pct = float(usdinr_q.get("chg_pct") or 0.0)
+        usd_chg_pct = _safe_float(usdinr_q.get("chg_pct"), 0.0)
 
-        sp_q = snapshot.get("sp500", {})
+        sp_q = snapshot.get("sp500") or {}
         sp_val = sp_q.get("value") or sp_q.get("last")
-        sp_chg_pct = float(sp_q.get("chg_pct") or 0.0)
+        sp_chg_pct = _safe_float(sp_q.get("chg_pct"), 0.0)
 
         # Index Constituents from snapshot (100% type-defensive)
         raw_hw = snapshot.get("heavyweights")
@@ -312,14 +339,14 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
 
     except Exception:
         return {
-            "headline": f"<b>{html.escape(str(asset_name))}</b> Market Regime Intelligence Initializing...",
-            "regime_badge": "DATA STREAM INITIALIZING",
+            "headline": f"<b>{html.escape(str(asset_name))}</b> feed processing encountered an unexpected state.",
+            "regime_badge": "DATA UNAVAILABLE",
             "regime_color": "#64748B",
-            "triggers": "Mathematical reference levels will activate on the next data cycle.",
-            "vix_status": "VIX data pending exchange session tick.",
-            "vix_explanation": "Implied volatility calculation will sync automatically.",
-            "macro_text": "Intermarket benchmarks (Crude, USD/INR, S&P 500) will refresh shortly.",
-            "heavyweight_text": "Constituent advance/decline distribution is currently offline.",
+            "triggers": "Mathematical reference levels unavailable.",
+            "vix_status": "VIX data unavailable.",
+            "vix_explanation": "Implied volatility metrics unavailable.",
+            "macro_text": "Intermarket benchmarks unavailable.",
+            "heavyweight_text": "Constituent data unavailable.",
             "strength_score": 50.0,
             "conviction_pct": 50.0,
             "bull_pct": 50,

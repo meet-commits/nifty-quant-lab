@@ -19,6 +19,7 @@ from chartink_engine import (
     get_market_breadth_stats,
     get_sector_heatmap
 )
+from bhavcopy_service import check_bhavcopy_backfill_health
 
 def render_events_and_news() -> None:
     """Renders Section 04: Dynamic Event Countdown & News Dossier."""
@@ -112,6 +113,24 @@ def render_events_and_news() -> None:
 
 def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
     """Renders Mode 2: Chartink Pro Suite with sortable dataframes and interactive candlestick/RSI."""
+    # 0. Startup Guard: Backfill depth and staleness verification
+    health = check_bhavcopy_backfill_health()
+    if not health.get("is_healthy", False):
+        st.html(f"""
+        <div style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); border-radius:12px; padding:24px; text-align:center; margin:20px 0;">
+            <div style="font-family:'Syncopate', sans-serif; font-size:16px; font-weight:800; color:#EF4444; letter-spacing:1px; margin-bottom:8px;">
+                ⚠️ DATA UNAVAILABLE / BACKFILL INCOMPLETE
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; color:#FCA5A5;">
+                {html.escape(health.get('status_message', 'Bhavcopy backfill has not reached minimum required depth.'))}
+            </div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#94A3B8; margin-top:8px;">
+                Real Sessions: {health.get('num_sessions', 0)} / 250 required • Latest Session: {health.get('max_date', 'None')}
+            </div>
+        </div>
+        """)
+        return
+
     # 1. Navbar
     st.html("""
     <div style="background:#0B132B; border:1px solid #1C2541; border-radius:14px; padding:14px 18px; margin-bottom:18px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6);">
@@ -130,7 +149,7 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
         </div>
         <div style="display:flex; align-items:center; gap:12px;">
             <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#10B981; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.3); padding:4px 12px; border-radius:20px;">
-                ● NSE HIGH-LIQUIDITY SAMPLE (Top 16 F&O Heavyweights)
+                ● NSE CASH UNIVERSE (EQ & BE Series • Full EOD History)
             </span>
         </div>
     </div>
@@ -160,17 +179,17 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 20 EMA</div>
                 <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{breadth.get('pct_above_20_ema', 0.0)}%</div>
-                <div style="font-size:9.5px; color:#64748B;">Short-Term Push</div>
+                <div style="font-size:9.5px; color:#64748B;">{breadth.get('above_20', 0)}/{breadth.get('eligible_20_count', 0)} eligible (≥20d)</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 50 EMA</div>
                 <div style="font-size:20px; font-weight:900; color:#00F0FF; margin:2px 0;">{breadth.get('pct_above_50_ema', 0.0)}%</div>
-                <div style="font-size:9.5px; color:#64748B;">Structural Base</div>
+                <div style="font-size:9.5px; color:#64748B;">{breadth.get('above_50', 0)}/{breadth.get('eligible_50_count', 0)} eligible (≥50d)</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 200 EMA</div>
                 <div style="font-size:20px; font-weight:900; color:#F59E0B; margin:2px 0;">{breadth.get('pct_above_200_ema', 0.0)}%</div>
-                <div style="font-size:9.5px; color:#64748B;">Macro Bull Base</div>
+                <div style="font-size:9.5px; color:#64748B;">{breadth.get('above_200', 0)}/{breadth.get('eligible_200_count', 0)} eligible (≥200d)</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">ADVANCE / DECLINE</div>
@@ -222,6 +241,9 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
         </div>
         <div style="font-size:11px; color:#94A3B8; margin-top:8px;">
             <b>Scan Logic:</b> {html.escape(active_cat.get('desc', ''))}
+        </div>
+        <div style="font-size:11px; color:#FCD34D; margin-top:8px; font-family:'JetBrains Mono', monospace; background:rgba(245,158,11,0.08); padding:6px 10px; border-radius:6px; border:1px solid rgba(245,158,11,0.2);">
+            ⚠️ <b>Screening Note:</b> {html.escape(active_cat.get('note', 'Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.'))}
         </div>
     </div>
     """)

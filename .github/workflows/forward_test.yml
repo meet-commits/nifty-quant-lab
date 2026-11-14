@@ -1,0 +1,94 @@
+name: Automated Forward-Test Pipeline
+
+on:
+  schedule:
+    # 09:45 UTC = 15:15 IST (Close Model Inference, Mon-Fri)
+    - cron: '45 9 * * 1-5'
+    # 03:15 UTC = 08:45 IST (Pre-Open Nowcast Inference, Mon-Fri)
+    - cron: '15 3 * * 1-5'
+    # 04:00 UTC = 09:30 IST (Outcome Resolution Fill, Mon-Fri)
+    - cron: '0 4 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      job_type:
+        description: 'Job to execute'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - close_1515
+          - preopen_0845
+          - fill_outcomes
+          - audit
+
+permissions:
+  contents: write
+
+jobs:
+  forward-test-execution:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Determine job type from schedule or dispatch
+        id: job-selector
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TARGET_JOB=${{ github.event.inputs.job_type }}" >> $GITHUB_ENV
+          else
+            # Derive job from current UTC hour/minute
+            H=$(date -u +%H)
+            M=$(date -u +%M)
+            if [ "$H" -eq 9 ]; then
+              echo "TARGET_JOB=close_1515" >> $GITHUB_ENV
+            elif [ "$H" -eq 3 ]; then
+              echo "TARGET_JOB=preopen_0845" >> $GITHUB_ENV
+            elif [ "$H" -eq 4 ]; then
+              echo "TARGET_JOB=fill_outcomes" >> $GITHUB_ENV
+            else
+              echo "TARGET_JOB=all" >> $GITHUB_ENV
+            fi
+          fi
+
+      - name: Execute forward test runner
+        run: |
+          python scripts/forward_test_runner.py --job-type ${{ env.TARGET_JOB }}
+
+      - name: Commit and push predictions log to data-archive branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Ensure data-archive branch is tracked
+          git fetch origin data-archive:data-archive 2>/dev/null || git branch data-archive
+          
+          # Temporarily copy updated predictions log
+          cp data/predictions_log.parquet /tmp/predictions_log.parquet
+          
+          # Switch to data-archive branch
+          git checkout data-archive
+          cp /tmp/predictions_log.parquet data/predictions_log.parquet
+          
+          git add data/predictions_log.parquet
+          if git diff --staged --quiet; then
+            echo "No changes in predictions log."
+          else
+            git commit -m "chore(forward-test): update predictions log (${{ env.TARGET_JOB }}) [skip ci]"
+            git push origin data-archive
+          fi
+

@@ -30,7 +30,7 @@ from bhavcopy_service import (
 )
 
 
-def create_deterministic_universe_fixture(num_symbols: int = 12, num_days: int = 35) -> pd.DataFrame:
+def create_deterministic_universe_fixture(num_symbols: int = 12, num_days: int = 55) -> pd.DataFrame:
     """
     Creates a deterministic multi-symbol, multi-session OHLCV fixture dataset
     with known technical behaviors:
@@ -240,6 +240,293 @@ class TestBhavcopyScanner(unittest.TestCase):
             con.close()
             if os.path.exists(temp_db):
                 os.remove(temp_db)
+
+    def test_synthetic_5_to_1_split_no_false_breakdown_or_oversold(self):
+        """
+        Corporate Actions Adjustment verification:
+        When a stock undergoes an unadjusted 5:1 split (|return| > 35%, close = prev_close / 5),
+        historical prices must be back-adjusted so:
+        1. 200 EMA reflects post-split level (~500, not ~2500)
+        2. Stock does NOT trigger false Bearish Breakdown below 200 EMA
+        3. Stock does NOT trigger false Panic Oversold (RSI < 32)
+        """
+        import numpy as np
+        from chartink_engine import scan_bearish_breakdown
+
+        base_date = date(2025, 1, 1)
+        records = []
+        curr = base_date
+        dates = []
+        while len(dates) < 210:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        p = 2500.0
+        for i, d in enumerate(dates):
+            if i == 205:
+                # 5:1 stock split ex-date!
+                prev_c = p
+                p = 502.0  # ~2500 / 5
+                vol = 1500000
+                o = 500.0
+                h = 512.0
+                l = 495.0
+            elif i > 205:
+                prev_c = p
+                p = round(p * 1.002, 2)
+                vol = 1200000
+                o = prev_c
+                h = round(p * 1.01, 2)
+                l = round(p * 0.99, 2)
+            else:
+                prev_c = p
+                p = round(2500.0 * (1.0 + np.sin(i / 10.0) * 0.02), 2)
+                vol = 250000
+                o = prev_c
+                h = round(p * 1.01, 2)
+                l = round(p * 0.99, 2)
+
+            records.append({
+                "trade_date": d,
+                "symbol": "SPLIT_CORP",
+                "series": "EQ",
+                "open": o,
+                "high": h,
+                "low": l,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": round(p * vol, 2)
+            })
+
+        split_df = pd.DataFrame(records)
+        computed = compute_universe_indicators(split_df)
+        latest_bar = computed[computed['trade_date'] == dates[-1]].iloc[0]
+
+        # 1. Verify 200 EMA is adjusted to post-split range (~500, NOT ~2400)
+        self.assertLess(latest_bar['ema200'], 600.0, "200 EMA must be post-split adjusted to ~500!")
+        self.assertGreater(latest_bar['ema200'], 450.0, "200 EMA must be in the ~500 range!")
+
+        # 2. Verify close is above 200 EMA (no false breakdown)
+        self.assertGreaterEqual(latest_bar['close'], latest_bar['ema200'])
+
+        # 3. Assert scan_bearish_breakdown does NOT match SPLIT_CORP
+        latest_df = computed[computed['trade_date'] == dates[-1]].copy()
+        breakdowns = scan_bearish_breakdown(latest_df, computed)
+        self.assertNotIn("SPLIT_CORP", breakdowns['symbol'].tolist(), "Split symbol must not trigger false breakdown!")
+
+        # 4. Verify RSI(14) is healthy and not falsely triggered as oversold
+        self.assertGreater(latest_bar['rsi14'], 40.0, "RSI must not falsely plummet below oversold threshold on split!")
+        oversold = scan_rsi_oversold_dips(latest_df, computed)
+        self.assertNotIn("SPLIT_CORP", oversold['symbol'].tolist(), "Split symbol must not trigger false oversold dip!")
+
+    def test_synthetic_1_to_1_bonus(self):
+        """
+        Corporate Actions: 1:1 Bonus Issue.
+        When 1 bonus share is issued per share held (ratio 0.50),
+        historical prices must halve and volumes double so indicators remain continuous.
+        """
+        import numpy as np
+        dates = []
+        curr = date(2025, 1, 1)
+        while len(dates) < 220:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        records = []
+        p = 1000.0
+        for i, d in enumerate(dates):
+            if i == 200:  # 1:1 bonus ex-date
+                prev_c = 500.0  # NSE adjusted prev_close on ex-date
+                p = 505.0
+                vol = 102000
+            elif i > 200:
+                prev_c = p
+                p = round(p * 1.001, 2)
+                vol = 100000
+            else:
+                prev_c = p
+                p = round(1000.0 * (1.0 + np.sin(i / 15.0) * 0.01), 2)
+                vol = 50000
+
+            records.append({
+                "trade_date": d,
+                "symbol": "BONUS_CORP",
+                "series": "EQ",
+                "open": p,
+                "high": p * 1.01,
+                "low": p * 0.99,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": p * vol
+            })
+
+        df = pd.DataFrame(records)
+        computed = compute_universe_indicators(df)
+        latest_bar = computed[computed['trade_date'] == dates[-1]].iloc[0]
+
+        # 200 EMA must be in post-bonus range (~500, NOT ~1000)
+        self.assertLess(latest_bar['ema200'], 600.0)
+        self.assertGreater(latest_bar['ema200'], 450.0)
+        # Volume surge must remain steady (~1.0x, not 2.0x)
+        self.assertLess(latest_bar['vol_surge'], 1.4)
+
+    def test_genuine_40pct_crash_no_adjustment(self):
+        """
+        Corporate Actions: Genuine -40% crash without a corporate action.
+        When a stock crashes -40% (close 600 vs prev_close 1000) with NO exchange
+        corporate action (prev_close == stored close), prices must NOT be adjusted.
+        """
+        import numpy as np
+        from chartink_engine import scan_bearish_breakdown
+        dates = []
+        curr = date(2025, 1, 1)
+        while len(dates) < 220:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        records = []
+        p = 1000.0
+        for i, d in enumerate(dates):
+            if i == 205:
+                # Genuine market crash: -40%!
+                prev_c = 1000.0  # NSE published PREV_CLOSE is UNCHANGED because no action occurred
+                p = 600.0
+                vol = 500000
+            elif i > 205:
+                prev_c = p
+                p = round(p * 0.99, 2)
+                vol = 200000
+            else:
+                prev_c = p
+                p = round(1000.0 * (1.0 + np.sin(i / 10.0) * 0.01), 2)
+                vol = 100000
+
+            records.append({
+                "trade_date": d,
+                "symbol": "CRASH_STOCK",
+                "series": "EQ",
+                "open": prev_c,
+                "high": prev_c,
+                "low": p,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": p * vol
+            })
+
+        df = pd.DataFrame(records)
+        computed = compute_universe_indicators(df)
+        latest_bar = computed[computed['trade_date'] == dates[-1]].iloc[0]
+
+        # Historical prices must NOT have been scaled down
+        hist_bar = computed[computed['trade_date'] == dates[50]].iloc[0]
+        self.assertGreater(hist_bar['close'], 900.0, "Historical price must NOT be scaled for genuine crash!")
+
+        # 200 EMA reflects high pre-crash price (~980)
+        self.assertGreater(latest_bar['ema200'], 850.0)
+
+        # Genuine breakdown below 200 EMA must be detected!
+        latest_df = computed[computed['trade_date'] == dates[-1]].copy()
+        breakdowns = scan_bearish_breakdown(latest_df, computed)
+        self.assertIn("CRASH_STOCK", breakdowns['symbol'].tolist(), "Genuine -40% crash MUST trigger breakdown scan!")
+
+    def test_volume_surge_post_split_invariance(self):
+        """
+        Corporate Actions: Volume Surge post-split invariance.
+        Post-split volume jumps 5x nominally, but since historical volume is adjusted inversely,
+        the 20-day volume SMA adjusts in lockstep and volume surge ratio does NOT falsely spike.
+        """
+        dates = []
+        curr = date(2025, 1, 1)
+        while len(dates) < 220:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        records = []
+        p = 2000.0
+        for i, d in enumerate(dates):
+            if i >= 200:
+                prev_c = 400.0 if i == 200 else p
+                p = 402.0
+                vol = 500000  # Nominal volume expands 5x post-split
+            else:
+                prev_c = p
+                p = 2000.0
+                vol = 100000  # Pre-split volume was 100k
+
+            records.append({
+                "trade_date": d,
+                "symbol": "VOL_SPLIT",
+                "series": "EQ",
+                "open": p,
+                "high": p * 1.01,
+                "low": p * 0.99,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": p * vol
+            })
+
+        df = pd.DataFrame(records)
+        computed = compute_universe_indicators(df)
+        ex_bar = computed[computed['trade_date'] == dates[200]].iloc[0]
+
+        # Volume surge on ex-date should be ~1.0x (normal), not 5.0x
+        self.assertLess(ex_bar['vol_surge'], 1.25, "Volume surge must NOT spike 5x on stock split!")
+        self.assertGreater(ex_bar['vol_surge'], 0.85, "Volume surge must remain ~1.0x with inverse volume adjustment!")
+
+    def test_ema200_session_count_eligibility(self):
+        """
+        Indicator Validity:
+        Symbols with < 200 sessions must have ema200 = NaN,
+        and must be excluded from the % > 200 EMA denominator in market breadth.
+        """
+        import numpy as np
+
+        base_date = date(2026, 8, 1)
+        records = []
+        curr = base_date
+        dates = []
+        while len(dates) < 60:  # Only 60 sessions!
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        p = 1000.0
+        for d in dates:
+            records.append({
+                "trade_date": d,
+                "symbol": "SHORT_HIST",
+                "series": "EQ",
+                "open": p,
+                "high": p * 1.01,
+                "low": p * 0.99,
+                "close": p,
+                "prev_close": p,
+                "volume": 500000,
+                "turnover": 500000000.0
+            })
+
+        short_df = pd.DataFrame(records)
+        computed = compute_universe_indicators(short_df)
+
+        # 1. All ema200 values must be NaN because count (60) < 200
+        self.assertTrue(computed['ema200'].isna().all(), "Symbols with < 200 sessions must have ema200 = NaN!")
+
+        # 2. ema50 should be valid for sessions >= 50
+        self.assertFalse(computed['ema50'].iloc[-1] is None or np.isnan(computed['ema50'].iloc[-1]))
+
+        # 3. In get_market_breadth_stats, eligible_200_count must be 0
+        latest_df = computed[computed['trade_date'] == dates[-1]].copy()
+        breadth = get_market_breadth_stats(latest_df)
+        self.assertEqual(breadth['eligible_200_count'], 0, "Stock with 60 sessions must have 0 eligible 200 EMA count!")
+        self.assertEqual(breadth['pct_above_200_ema'], 0.0)
 
 
 if __name__ == "__main__":

@@ -10,31 +10,47 @@ from typing import Dict, Any
 
 from live_market_service import get_live_intraday_candles
 
+def _safe_float(val, default=None):
+    if val is None or val in ("", "N/A", "None"):
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
 def render_intraday_section(selected_asset: str, current: Dict[str, Any], live_snap: Dict[str, Any]) -> None:
     """Renders the Intraday Strength Score card and live 5m candlestick chart."""
+    if not current or not isinstance(current, dict):
+        current = {}
+    if not live_snap or not isinstance(live_snap, dict):
+        live_snap = {}
+
     st.html("<div class='section-header'><span>01 / INTRADAY CONVERGENCE & LIVE CHART</span></div>")
 
-    tow_label = "BULLS LEADING" if current['bull_pct'] >= 60 else ("BEARS LEADING" if current['bear_pct'] >= 60 else "NEUTRAL MOMENTUM")
-    tow_color = "#10B981" if current['bull_pct'] >= 50 else "#F43F5E"
+    bull_p = current.get('bull_pct', 50)
+    bear_p = current.get('bear_pct', 50)
 
-    vix_q_data = live_snap.get("vix", {})
-    crude_q_data = live_snap.get("crude", {})
-    usd_q_data = live_snap.get("usdinr", {})
-    sp_q_data = live_snap.get("sp500", {})
+    tow_label = "BULLS LEADING" if bull_p >= 60 else ("BEARS LEADING" if bear_p >= 60 else "NEUTRAL MOMENTUM")
+    tow_color = "#10B981" if bull_p >= 50 else "#F43F5E"
+
+    vix_q_data = live_snap.get("vix") or {}
+    crude_q_data = live_snap.get("crude") or {}
+    usd_q_data = live_snap.get("usdinr") or {}
+    sp_q_data = live_snap.get("sp500") or {}
 
     vix_badge = "LIVE" if vix_q_data.get("is_live", False) else ("STALE" if vix_q_data.get("is_stale", False) else "POST-MKT")
     crude_badge = "LIVE" if crude_q_data.get("is_live", False) else ("STALE" if crude_q_data.get("is_stale", False) else "GLOBAL FUT")
     usd_badge = "LIVE" if usd_q_data.get("is_live", False) else ("STALE" if usd_q_data.get("is_stale", False) else "FOREX EOD")
     sp_badge = "LIVE" if sp_q_data.get("is_live", False) else ("STALE" if sp_q_data.get("is_stale", False) else "US GLOBEX")
 
-    vix_close = vix_q_data.get("value") or vix_q_data.get("last")
-    vix_pct = vix_q_data.get("chg_pct")
-    crude_close = crude_q_data.get("value") or crude_q_data.get("last")
-    crude_pct = crude_q_data.get("chg_pct")
-    usd_close = usd_q_data.get("value") or usd_q_data.get("last")
-    usd_pct = usd_q_data.get("chg_pct")
-    sp_close = sp_q_data.get("value") or sp_q_data.get("last")
-    sp_pct = sp_q_data.get("chg_pct")
+    vix_close = _safe_float(vix_q_data.get("value") or vix_q_data.get("last"))
+    vix_pct = _safe_float(vix_q_data.get("chg_pct"))
+    crude_close = _safe_float(crude_q_data.get("value") or crude_q_data.get("last"))
+    crude_pct = _safe_float(crude_q_data.get("chg_pct"))
+    usd_close = _safe_float(usd_q_data.get("value") or usd_q_data.get("last"))
+    usd_pct = _safe_float(usd_q_data.get("chg_pct"))
+    sp_close = _safe_float(sp_q_data.get("value") or sp_q_data.get("last"))
+    sp_pct = _safe_float(sp_q_data.get("chg_pct"))
 
     vix_disp = f"{vix_close:.2f} ({vix_pct:+.2f}%)" if (vix_close is not None and vix_pct is not None) else "N/A"
     crude_disp = f"${crude_close:.2f} ({crude_pct:+.2f}%)" if (crude_close is not None and crude_pct is not None) else "N/A"

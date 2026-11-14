@@ -259,20 +259,35 @@ def format_chg_str(chg, pct, is_stale=False):
         return "N/A"
     return f"{pct:+.2f}% ({'+' if chg>=0 else ''}{chg:,.1f} pts)"
 
+def _safe_float(val, default=None):
+    if val is None or val in ("", "N/A", "None"):
+        return default
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
 def format_target_diff(target, spot):
-    if target is None or spot is None:
+    t_val = _safe_float(target)
+    s_val = _safe_float(spot)
+    if t_val is None or s_val is None:
         return "N/A"
-    diff = target - spot
+    diff = t_val - s_val
     return f"{'+' if diff>=0 else ''}{diff:.1f} pts from spot"
 
 def build_current_index_data(live_snap, selected_asset, macro_story):
-    session_status = live_snap.get("session_status", "CLOSED")
-    latest_date = live_snap.get("timestamp", "N/A")
+    if not live_snap or not isinstance(live_snap, dict):
+        live_snap = {}
+    if not macro_story or not isinstance(macro_story, dict):
+        macro_story = {}
 
-    n_q = live_snap.get("nifty", {})
-    b_q = live_snap.get("banknifty", {})
-    s_q = live_snap.get("sensex", {})
-    g_q = live_snap.get("giftnifty", {})
+    session_status = live_snap.get("session_status", "CLOSED")
+    latest_date = live_snap.get("timestamp", "DATA UNAVAILABLE")
+
+    n_q = live_snap.get("nifty") or {}
+    b_q = live_snap.get("banknifty") or {}
+    s_q = live_snap.get("sensex") or {}
+    g_q = live_snap.get("giftnifty") or {}
 
     strength_score = macro_story.get("strength_score", 50.0)
     conf_text = f"Intraday Strength: {strength_score:.1f} (heuristic)"
@@ -299,14 +314,14 @@ def build_current_index_data(live_snap, selected_asset, macro_story):
     }
 
     cfg = index_configs.get(selected_asset, index_configs["NIFTY 50"])
-    q = cfg["q"]
+    q = cfg["q"] or {}
     spot_val = q.get("value") or q.get("last")
-    spot_float = float(spot_val) if spot_val is not None else None
+    spot_float = _safe_float(spot_val)
 
-    sl_val = q.get("s1") or q.get("sl")
-    piv_val = q.get("pivot")
-    t1_val = q.get("r1") or q.get("t1")
-    t2_val = q.get("r2") or q.get("t2")
+    sl_val = _safe_float(q.get("s1") or q.get("sl"))
+    piv_val = _safe_float(q.get("pivot"))
+    t1_val = _safe_float(q.get("r1") or q.get("t1"))
+    t2_val = _safe_float(q.get("r2") or q.get("t2"))
 
     return {
         "title": cfg["title"],
@@ -341,7 +356,9 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     @st.fragment(run_every=fragment_refresh)
     def render_live_cockpit_fragment():
         live_snap = fetch_live_market_snapshot()
-        latest_date = live_snap.get("timestamp", "N/A")
+        if not live_snap or not isinstance(live_snap, dict):
+            live_snap = {}
+        latest_date = live_snap.get("timestamp", "DATA UNAVAILABLE")
 
         # 1. Top Status Bar
         render_status_bar(live_snap, latest_date)
@@ -381,7 +398,9 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
     # Static sections (do NOT rerun on live tick, preserving backtests and scroll state)
     live_snap_static = fetch_live_market_snapshot()
-    latest_date_static = live_snap_static.get("timestamp", "N/A")
+    if not live_snap_static or not isinstance(live_snap_static, dict):
+        live_snap_static = {}
+    latest_date_static = live_snap_static.get("timestamp", "DATA UNAVAILABLE")
 
     # 7. Data Health & Provenance Panel
     render_data_health_panel(live_snap_static)
@@ -403,6 +422,8 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 # =========================================================================
 else:
     live_snap_static = fetch_live_market_snapshot()
-    latest_date_static = live_snap_static.get("timestamp", "N/A")
+    if not live_snap_static or not isinstance(live_snap_static, dict):
+        live_snap_static = {}
+    latest_date_static = live_snap_static.get("timestamp", "DATA UNAVAILABLE")
     render_chartink_pro_suite(live_snap_static)
     render_footer(latest_date_static)

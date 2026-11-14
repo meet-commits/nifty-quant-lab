@@ -29,6 +29,19 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
 HOLIDAYS_PATH = os.path.join(CONFIG_DIR, "nse_holidays.csv")
+ETF_LIST_PATH = os.path.join(CONFIG_DIR, "nse_etfs.csv")
+
+
+def get_official_etf_symbols() -> set:
+    """Loads official NSE ETF symbols from config/nse_etfs.csv."""
+    try:
+        if os.path.exists(ETF_LIST_PATH):
+            df_etf = pd.read_csv(ETF_LIST_PATH)
+            col = "Symbol" if "Symbol" in df_etf.columns else df_etf.columns[0]
+            return set(df_etf[col].astype(str).str.strip().str.upper())
+    except Exception:
+        pass
+    return set()
 
 
 def get_db_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -38,7 +51,7 @@ def get_db_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
 
 
 def init_bhavcopy_table(con: Optional[duckdb.DuckDBPyConnection] = None) -> None:
-    """Ensures bhavcopy_daily table exists with proper indexes."""
+    """Ensures bhavcopy_daily table exists with proper indexes and data provenance source."""
     close_con = False
     if con is None:
         con = get_db_connection(read_only=False)
@@ -57,18 +70,24 @@ def init_bhavcopy_table(con: Optional[duckdb.DuckDBPyConnection] = None) -> None
                 prev_close DOUBLE,
                 volume BIGINT,
                 turnover DOUBLE,
+                source VARCHAR DEFAULT 'NSE_MCP',
                 PRIMARY KEY (trade_date, symbol, series)
             );
             CREATE INDEX IF NOT EXISTS idx_bhavcopy_date ON bhavcopy_daily(trade_date);
             CREATE INDEX IF NOT EXISTS idx_bhavcopy_sym ON bhavcopy_daily(symbol);
+            CREATE INDEX IF NOT EXISTS idx_bhavcopy_source ON bhavcopy_daily(source);
         """)
+        try:
+            con.execute("ALTER TABLE bhavcopy_daily ADD COLUMN IF NOT EXISTS source VARCHAR DEFAULT 'NSE_MCP';")
+        except Exception:
+            pass
     finally:
         if close_con:
             con.close()
 
 
-def save_bhavcopy_records(records: List[Dict[str, Any]], con: Optional[duckdb.DuckDBPyConnection] = None) -> int:
-    """Idempotently saves or updates bhavcopy records in DuckDB."""
+def save_bhavcopy_records(records: List[Dict[str, Any]], con: Optional[duckdb.DuckDBPyConnection] = None, default_source: str = "NSE_MCP") -> int:
+    """Idempotently saves or updates bhavcopy records in DuckDB with source provenance."""
     if not records:
         return 0
 
@@ -83,6 +102,10 @@ def save_bhavcopy_records(records: List[Dict[str, Any]], con: Optional[duckdb.Du
         # Prepare bulk dataframe for fast ingestion
         df = pd.DataFrame(records)
         df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+        if "source" not in df.columns:
+            df["source"] = default_source
+        else:
+            df["source"] = df["source"].fillna(default_source)
 
         # Idempotent upsert via delete + insert within a transaction
         con.execute("BEGIN TRANSACTION;")
@@ -92,8 +115,8 @@ def save_bhavcopy_records(records: List[Dict[str, Any]], con: Optional[duckdb.Du
 
         con.register("df_insert", df)
         con.execute("""
-            INSERT INTO bhavcopy_daily (trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover)
-            SELECT trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover
+            INSERT INTO bhavcopy_daily (trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover, source)
+            SELECT trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover, source
             FROM df_insert;
         """)
         con.unregister("df_insert")
@@ -128,12 +151,13 @@ def fetch_fallback_nse_bhavcopy_csv(target_date: date) -> Optional[List[Dict[str
         if resp.status_code == 200 and len(resp.text) > 1000:
             records = []
             f = io.StringIO(resp.text)
-            reader = csv.DictReader(f)
-            for row in reader:
-                series = row.get("SERIES", "").strip()
+            reader = csv.DictReader(f, skipinitialspace=True)
+            for raw_row in reader:
+                row = {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k}
+                series = row.get("SERIES", "").upper()
                 if series not in ("EQ", "BE"):
                     continue
-                sym = row.get("SYMBOL", "").strip().upper()
+                sym = row.get("SYMBOL", "").upper()
                 if not sym:
                     continue
                 try:
@@ -157,7 +181,8 @@ def fetch_fallback_nse_bhavcopy_csv(target_date: date) -> Optional[List[Dict[str
                         "close": round(c, 2),
                         "prev_close": round(prev, 2),
                         "volume": vol,
-                        "turnover": round(turnover, 2)
+                        "turnover": round(turnover, 2),
+                        "source": "NSE_CSV"
                     })
                 except (ValueError, TypeError):
                     continue
@@ -194,13 +219,13 @@ def fetch_and_store_bhavcopy(target_date: Optional[date] = None, force: bool = F
         records = fetch_nse_mcp_bhavcopy(target_date)
         if records:
             logger.info(f"Retrieved {len(records)} quotes from official NSE MCP Bhavcopy server.")
-            return save_bhavcopy_records(records, con)
+            return save_bhavcopy_records(records, con, default_source="NSE_MCP")
 
         # 2. Secondary Fallback: Direct NSE archives CSV
         records = fetch_fallback_nse_bhavcopy_csv(target_date)
         if records:
             logger.info(f"Retrieved {len(records)} quotes from NSE Archives Bhavcopy CSV.")
-            return save_bhavcopy_records(records, con)
+            return save_bhavcopy_records(records, con, default_source="NSE_CSV")
 
         return 0
     finally:
@@ -281,28 +306,43 @@ def ensure_bhavcopy_seeded(min_sessions: int = 30) -> int:
                     "close": p,
                     "prev_close": prev_c,
                     "volume": vol,
-                    "turnover": turnover
+                    "turnover": turnover,
+                    "source": "TEST_FIXTURE"
                 })
 
-        save_bhavcopy_records(seed_records, con)
+        save_bhavcopy_records(seed_records, con, default_source="TEST_FIXTURE")
         logger.info(f"Successfully seeded {len(seed_records)} rows across {len(date_list)} sessions.")
         return len(date_list)
     finally:
         con.close()
 
 
-def get_bhavcopy_universe(days: int = 150) -> pd.DataFrame:
+def get_bhavcopy_universe(
+    days: int = 150,
+    allow_test_fixtures: bool = False,
+    min_turnover: float = 1_000_000.0,
+    exclude_etfs: bool = True
+) -> pd.DataFrame:
     """
     Queries historical Bhavcopy records for active cash equities from DuckDB.
     Returns clean pandas DataFrame ordered by symbol and trade_date.
+    - Restricts to cash series 'EQ' and 'BE' (excludes SME series like SM/ST).
+    - Enforces documented turnover filter (default >= 1,000,000 INR daily traded value).
+    - Excludes ETFs (*BEES, *ETF, *GOLD*) from the single-stock equity universe.
+    - Guarantees the app never reads TEST_FIXTURE rows outside tests unless allow_test_fixtures=True.
     """
     ensure_bhavcopy_seeded()
     con = get_db_connection(read_only=True)
     try:
+        source_filter = "" if allow_test_fixtures else "WHERE source != 'TEST_FIXTURE'"
+        source_filter_and = "" if allow_test_fixtures else "AND source != 'TEST_FIXTURE'"
+        etf_filter = "AND symbol NOT LIKE '%BEES' AND symbol NOT LIKE '%ETF' AND symbol NOT LIKE '%GOLD%'" if exclude_etfs else ""
+
         # Get list of recent distinct dates
-        recent_dates_df = con.execute("""
+        recent_dates_df = con.execute(f"""
             SELECT distinct trade_date 
             FROM bhavcopy_daily 
+            {source_filter}
             ORDER BY trade_date DESC 
             LIMIT ?;
         """, [days]).fetchdf()
@@ -312,16 +352,118 @@ def get_bhavcopy_universe(days: int = 150) -> pd.DataFrame:
 
         min_date = str(recent_dates_df["trade_date"].min())
 
-        df = con.execute("""
-            SELECT trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover
+        params = [min_date, min_turnover]
+        df = con.execute(f"""
+            SELECT trade_date, symbol, series, open, high, low, close, prev_close, volume, turnover, source
             FROM bhavcopy_daily
-            WHERE series IN ('EQ', 'BE') AND trade_date >= ?
+            WHERE series IN ('EQ', 'BE') 
+              AND trade_date >= ? 
+              AND (turnover IS NULL OR turnover >= ?)
+              {source_filter_and}
+              {etf_filter}
             ORDER BY symbol, trade_date ASC;
-        """, [min_date]).fetchdf()
+        """, params).fetchdf()
 
         if not df.empty:
             df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
 
         return df
+    finally:
+        con.close()
+
+
+def get_bhavcopy_provenance_stats() -> Dict[str, Any]:
+    """Returns provenance and audit statistics for all rows in bhavcopy_daily."""
+    con = get_db_connection(read_only=False)
+    try:
+        init_bhavcopy_table(con)
+        summary = con.execute("""
+            SELECT 
+                COUNT(*) as total_rows,
+                COUNT(DISTINCT trade_date) as num_sessions,
+                MIN(trade_date) as min_date,
+                MAX(trade_date) as max_date,
+                COUNT(DISTINCT symbol) as num_symbols
+            FROM bhavcopy_daily;
+        """).fetchone()
+
+        source_rows = con.execute("""
+            SELECT COALESCE(source, 'UNKNOWN') as src, COUNT(*) as cnt
+            FROM bhavcopy_daily
+            GROUP BY src;
+        """).fetchall()
+
+        rows_per_source = {src: cnt for src, cnt in source_rows}
+
+        return {
+            "total_rows": summary[0] if summary else 0,
+            "num_sessions": summary[1] if summary else 0,
+            "min_trade_date": str(summary[2]) if summary and summary[2] else "N/A",
+            "max_trade_date": str(summary[3]) if summary and summary[3] else "N/A",
+            "num_symbols": summary[4] if summary else 0,
+            "rows_per_source": rows_per_source
+        }
+    finally:
+        con.close()
+
+
+def check_bhavcopy_backfill_health(min_required_sessions: int = 250, max_stale_trading_days: int = 3) -> Dict[str, Any]:
+    """
+    Startup guard: asserts that DuckDB bhavcopy has >= 250 real sessions
+    and that the latest session is not older than 3 trading days.
+    """
+    con = get_db_connection(read_only=True)
+    try:
+        init_bhavcopy_table(con)
+        res = con.execute("""
+            SELECT 
+                COUNT(DISTINCT trade_date) as num_real_sessions,
+                MIN(trade_date) as min_date,
+                MAX(trade_date) as max_date,
+                COUNT(DISTINCT symbol) as num_symbols
+            FROM bhavcopy_daily
+            WHERE source IN ('NSE_MCP', 'NSE_CSV');
+        """).fetchone()
+
+        num_sessions = res[0] if res and res[0] is not None else 0
+        min_date = res[1]
+        max_date = res[2]
+        num_symbols = res[3] if res and res[3] is not None else 0
+
+        today = datetime.now(IST).date()
+
+        # Count trading days between max_date and today (excluding weekends)
+        trading_days_old = 0
+        if max_date:
+            curr = max_date + timedelta(days=1)
+            while curr <= today:
+                if curr.weekday() < 5:  # Monday to Friday
+                    trading_days_old += 1
+                curr += timedelta(days=1)
+        else:
+            trading_days_old = 9999
+
+        calendar_days_old = (today - max_date).days if max_date else 9999
+
+        is_healthy = True
+        status_message = "HEALTHY"
+
+        if num_sessions < min_required_sessions:
+            is_healthy = False
+            status_message = f"INSUFFICIENT_HISTORY: {num_sessions} real sessions (< {min_required_sessions} required)"
+        elif trading_days_old > max_stale_trading_days:
+            is_healthy = False
+            status_message = f"DATA_STALE: latest real session is {max_date} ({trading_days_old} trading days old > {max_stale_trading_days})"
+
+        return {
+            "is_healthy": is_healthy,
+            "status_message": status_message,
+            "num_sessions": num_sessions,
+            "min_date": str(min_date) if min_date else None,
+            "max_date": str(max_date) if max_date else None,
+            "num_symbols": num_symbols,
+            "trading_days_old": trading_days_old,
+            "calendar_days_old": calendar_days_old
+        }
     finally:
         con.close()
