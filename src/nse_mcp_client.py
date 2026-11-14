@@ -1,32 +1,64 @@
 """
 src/nse_mcp_client.py
-Official Client Adapter for National Stock Exchange of India (NSE) Model Context Protocol (MCP) Servers.
-Connects directly to:
+Production-grade Thread-Safe Client for National Stock Exchange of India (NSE) Model Context Protocol (MCP).
+Connects to:
   - CM Live Market: https://mcp.nseindia.in/cmmkt/mcp
   - Historical Bhavcopy: https://mcp.nseindia.in/bhavcopy/cm/mcp
 
-Uses JSON-RPC 2.0 over Streamable HTTP (SSE) protocol without any API keys or authentication.
-100% Free & Open Exchange Interface.
+Features:
+  - Strict JSON-RPC 2.0 + notifications/initialized handshake
+  - Thread-safe concurrency with threading.Lock
+  - Handles application/json and text/event-stream (SSE)
+  - Automatic session recovery with 1 retry on error
+  - Exposes real telemetry stats (quotes_served, errors, reconnects)
+  - Returns standardized Quote dataclass from src/datapoint.py
 """
 
 import json
 import time
+import threading
 import requests
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Dict, List, Any, Optional
 
+try:
+    from datapoint import Quote, make_quote
+except ImportError:
+    from src.datapoint import Quote, make_quote
+
+IST = ZoneInfo("Asia/Kolkata")
 CM_MKT_URL = "https://mcp.nseindia.in/cmmkt/mcp"
 BHAVCOPY_URL = "https://mcp.nseindia.in/bhavcopy/cm/mcp"
 
-_MCP_SESSION = None
-_SESSION_ID = None
+_LOCK = threading.Lock()
+_MCP_SESSION: Optional[requests.Session] = None
+_SESSION_ID: Optional[str] = None
 _SESSION_EXPIRY = 0.0
-_QUOTE_CACHE: Dict[str, Dict[str, Any]] = {}
-_LAST_MCP_CHECK = 0.0
 _IS_MCP_ONLINE = False
 
+_STATS = {
+    "quotes_served": 0,
+    "errors": 0,
+    "reconnects": 0,
+    "symbols_served": {},
+    "last_call_ts": None,
+    "session_id": None
+}
 
-def _parse_sse_json(text: str) -> Optional[Dict[str, Any]]:
-    """Helper to parse SSE stream 'data: {...}' into a JSON dictionary."""
+
+def _parse_mcp_response(resp: requests.Response) -> Optional[Dict[str, Any]]:
+    """Parses MCP server response whether returned as application/json or text/event-stream."""
+    content_type = resp.headers.get("Content-Type", "")
+    text = resp.text
+
+    if "application/json" in content_type:
+        try:
+            return resp.json()
+        except Exception:
+            pass
+
+    # Parse text/event-stream format (data: {...})
     for line in text.splitlines():
         line = line.strip()
         if line.startswith("data:"):
@@ -35,12 +67,17 @@ def _parse_sse_json(text: str) -> Optional[Dict[str, Any]]:
                 return json.loads(payload)
             except Exception:
                 pass
-    return None
+
+    # Fallback attempt if header was unexpected
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
 
 
-def _get_active_session() -> Optional[requests.Session]:
-    """Establishes or reuses an active MCP JSON-RPC session handshake."""
-    global _MCP_SESSION, _SESSION_ID, _SESSION_EXPIRY, _IS_MCP_ONLINE
+def _get_active_session_locked() -> Optional[requests.Session]:
+    """Establishes or reuses an active MCP session with notifications/initialized handshake. Must be called under _LOCK."""
+    global _MCP_SESSION, _SESSION_ID, _SESSION_EXPIRY, _IS_MCP_ONLINE, _STATS
 
     now = time.time()
     if _MCP_SESSION is not None and _SESSION_ID is not None and (now < _SESSION_EXPIRY):
@@ -51,8 +88,10 @@ def _get_active_session() -> Optional[requests.Session]:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream, */*",
-            "User-Agent": "NiftyQuantLab/1.0 (Mozilla/5.0)"
+            "User-Agent": "NiftyQuantLab/2.0 (Mozilla/5.0)"
         }
+
+        # Step 1: Initialize Handshake
         init_payload = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -60,111 +99,209 @@ def _get_active_session() -> Optional[requests.Session]:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "nifty-quant-lab", "version": "1.0.0"}
+                "clientInfo": {"name": "nifty-quant-lab", "version": "2.0.0"}
             }
         }
         resp = s.post(CM_MKT_URL, headers=headers, json=init_payload, timeout=4)
         if resp.status_code == 200:
             sess_id = resp.headers.get("Mcp-Session-Id")
             if sess_id:
+                # Step 2: Send mandatory notifications/initialized
+                notif_payload = {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                    "params": {}
+                }
+                headers["Mcp-Session-Id"] = sess_id
+                try:
+                    s.post(CM_MKT_URL, headers=headers, json=notif_payload, timeout=3)
+                except Exception:
+                    pass  # Notification is fire-and-forget
+
                 _MCP_SESSION = s
                 _SESSION_ID = sess_id
-                _SESSION_EXPIRY = now + 300.0  # 5-minute session lifetime
+                _SESSION_EXPIRY = now + 300.0  # 5-minute session renewal
                 _IS_MCP_ONLINE = True
+                _STATS["session_id"] = sess_id
+                _STATS["reconnects"] += 1
                 return _MCP_SESSION
     except Exception as e:
+        _STATS["errors"] += 1
         print(f"⚠️ NSE MCP Handshake Warning: {e}")
 
     _IS_MCP_ONLINE = False
+    _MCP_SESSION = None
+    _SESSION_ID = None
     return None
 
 
-def fetch_nse_mcp_stock_quote(symbol: str) -> Optional[Dict[str, Any]]:
+def _execute_mcp_tool_call(tool_name: str, arguments: Dict[str, Any], retry: bool = True) -> Optional[Dict[str, Any]]:
+    """Thread-safe tool execution with 1 automatic retry on session failure."""
+    global _MCP_SESSION, _SESSION_ID, _STATS
+
+    with _LOCK:
+        session = _get_active_session_locked()
+        sess_id = _SESSION_ID
+
+    if not session or not sess_id:
+        return None
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream, */*",
+        "Mcp-Session-Id": sess_id,
+        "User-Agent": "NiftyQuantLab/2.0"
+    }
+    call_payload = {
+        "jsonrpc": "2.0",
+        "id": int(time.time() * 1000) % 100000,
+        "method": "tools/call",
+        "params": {
+            "name": tool_name,
+            "arguments": arguments
+        }
+    }
+
+    try:
+        resp = session.post(CM_MKT_URL, headers=headers, json=call_payload, timeout=4)
+        if resp.status_code == 200:
+            parsed = _parse_mcp_response(resp)
+            if parsed and "result" in parsed and not parsed.get("isError", False):
+                return parsed["result"]
+        elif resp.status_code in (400, 401, 403, 404):
+            # Session likely invalid, force reconnect
+            with _LOCK:
+                _SESSION_EXPIRY = 0.0
+    except Exception as e:
+        _STATS["errors"] += 1
+        with _LOCK:
+            _SESSION_EXPIRY = 0.0
+
+    # One retry if allowed
+    if retry:
+        with _LOCK:
+            _SESSION_EXPIRY = 0.0
+            session = _get_active_session_locked()
+            sess_id = _SESSION_ID
+        if session and sess_id:
+            headers["Mcp-Session-Id"] = sess_id
+            try:
+                resp = session.post(CM_MKT_URL, headers=headers, json=call_payload, timeout=4)
+                if resp.status_code == 200:
+                    parsed = _parse_mcp_response(resp)
+                    if parsed and "result" in parsed and not parsed.get("isError", False):
+                        return parsed["result"]
+            except Exception:
+                _STATS["errors"] += 1
+
+    return None
+
+
+def fetch_nse_mcp_stock_quote(symbol: str, is_market_hours: bool = True) -> Optional[Quote]:
     """
-    Queries official NSE MCP server (cm_get_equity_stocks) for real-time stock quote.
-    Returns normalized OHLCV, LTP, 52-week metrics, and change data.
+    Primary data provider for NSE equities.
+    Queries official NSE MCP server (cm_get_equity_stocks).
+    Returns verified Quote dataclass or None if symbol not matched.
     """
     clean_sym = symbol.replace(".NS", "").strip().upper()
 
-    session = _get_active_session()
-    if not session or not _SESSION_ID:
+    res = _execute_mcp_tool_call("cm_get_equity_stocks", {"symbolFilter": clean_sym, "limit": 10})
+    if not res:
+        return None
+
+    content = res.get("content", [])
+    if not content or "text" not in content[0]:
         return None
 
     try:
-        call_payload = {
-            "jsonrpc": "2.0",
-            "id": int(time.time() * 1000) % 100000,
-            "method": "tools/call",
-            "params": {
-                "name": "cm_get_equity_stocks",
-                "arguments": {
-                    "symbolFilter": clean_sym,
-                    "limit": 5
-                }
-            }
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream, */*",
-            "Mcp-Session-Id": _SESSION_ID,
-            "User-Agent": "NiftyQuantLab/1.0"
-        }
-        resp = session.post(CM_MKT_URL, headers=headers, json=call_payload, timeout=4)
-        if resp.status_code == 200:
-            parsed = _parse_sse_json(resp.text)
-            if parsed and "result" in parsed:
-                content = parsed["result"].get("content", [])
-                if content and "text" in content[0]:
-                    inner = json.loads(content[0]["text"])
-                    stocks = inner.get("stocks", [])
-                    for s in stocks:
-                        if s.get("symbol") == clean_sym and s.get("series") == "EQ":
-                            ltp = float(s.get("lastTradedPrice", 0.0))
-                            prev = float(s.get("preClosePrice", ltp))
-                            chg = float(s.get("change", ltp - prev))
-                            pct = float(s.get("perChange", (chg / prev * 100.0) if prev else 0.0))
-                            return {
-                                "symbol": clean_sym,
-                                "last": round(ltp, 2),
-                                "prev": round(prev, 2),
-                                "open": round(float(s.get("openPrice", ltp)), 2),
-                                "high": round(float(s.get("highPrice", ltp)), 2),
-                                "low": round(float(s.get("lowPrice", ltp)), 2),
-                                "chg_pts": round(chg, 2),
-                                "chg_pct": round(pct, 2),
-                                "volume": int(s.get("volume", 0)),
-                                "fiftyTwoWeekHigh": float(s.get("fiftyTwoWeekHigh", 0.0)),
-                                "fiftyTwoWeekLow": float(s.get("fiftyTwoWeekLow", 0.0)),
-                                "timestamp": s.get("latestTimestamp", ""),
-                                "source": "OFFICIAL_NSE_MCP_SERVER",
-                                "is_live": True
-                            }
+        inner = json.loads(content[0]["text"])
+        stocks = inner.get("stocks", [])
+        for s in stocks:
+            if s.get("symbol") == clean_sym and s.get("series") == "EQ":
+                ltp = float(s.get("lastTradedPrice", 0.0))
+                prev = float(s.get("preClosePrice", ltp))
+                chg = float(s.get("change", ltp - prev))
+                pct = float(s.get("perChange", (chg / prev * 100.0) if prev else 0.0))
+                open_p = float(s.get("openPrice", ltp))
+                high_p = float(s.get("highPrice", ltp))
+                low_p = float(s.get("lowPrice", ltp))
+                vol = int(s.get("volume", 0))
+
+                ts_str = s.get("latestTimestamp", "")
+                ts_ist = None
+                if ts_str:
+                    try:
+                        ts_ist = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=IST)
+                    except Exception:
+                        pass
+                if ts_ist is None:
+                    ts_ist = datetime.now(IST)
+
+                # Record stats
+                _STATS["quotes_served"] += 1
+                _STATS["symbols_served"][clean_sym] = _STATS["symbols_served"].get(clean_sym, 0) + 1
+                _STATS["last_call_ts"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+
+                quote = make_quote(
+                    value=ltp,
+                    ts_ist=ts_ist,
+                    source="OFFICIAL_NSE_MCP_SERVER",
+                    is_market_hours=is_market_hours,
+                    open=open_p,
+                    high=high_p,
+                    low=low_p,
+                    prev=prev,
+                    chg_pts=chg,
+                    chg_pct=pct,
+                    volume=vol,
+                    is_real=True,
+                    metadata={
+                        "fiftyTwoWeekHigh": float(s.get("fiftyTwoWeekHigh", 0.0)),
+                        "fiftyTwoWeekLow": float(s.get("fiftyTwoWeekLow", 0.0)),
+                        "series": "EQ"
+                    }
+                )
+                return quote
     except Exception as e:
-        print(f"⚠️ Error querying NSE MCP for {clean_sym}: {e}")
+        _STATS["errors"] += 1
+        print(f"⚠️ Error parsing MCP quote for {clean_sym}: {e}")
 
     return None
 
 
 def check_nse_mcp_health() -> Dict[str, Any]:
-    """Returns connectivity and status information for official NSE MCP server."""
-    sess = _get_active_session()
+    """Returns connectivity, session status, and live operational stats."""
+    with _LOCK:
+        sess = _get_active_session_locked()
     return {
         "is_online": _IS_MCP_ONLINE,
         "endpoint": CM_MKT_URL,
         "transport": "Streamable HTTP (JSON-RPC 2.0 / SSE)",
         "session_id": _SESSION_ID if _SESSION_ID else "None",
+        "quotes_served": _STATS["quotes_served"],
+        "errors": _STATS["errors"],
+        "reconnects": _STATS["reconnects"],
+        "last_call_ts": _STATS["last_call_ts"],
         "official_provider": "National Stock Exchange of India (NSEIL)"
     }
 
 
+def get_nse_mcp_stats() -> Dict[str, Any]:
+    """Returns telemetry dictionary for reporting and health dashboards."""
+    return dict(_STATS)
+
+
 if __name__ == "__main__":
-    print("Testing Official NSE MCP Connection...")
+    print("Testing Hardened NSE MCP Client...")
     health = check_nse_mcp_health()
     print("Health:", health)
     if health["is_online"]:
-        print("Querying RELIANCE via Official NSE MCP...")
+        print("Querying RELIANCE...")
         q = fetch_nse_mcp_stock_quote("RELIANCE")
-        print("Quote:", q)
-        print("Querying HDFCBANK via Official NSE MCP...")
-        q2 = fetch_nse_mcp_stock_quote("HDFCBANK")
-        print("Quote:", q2)
+        if q:
+            print(f"RELIANCE: {q.format_value()} ({q.format_pct()}), Source={q.source}, Stale={q.is_stale}, Age={q.age_sec}s")
+        print("Querying SBIN...")
+        q2 = fetch_nse_mcp_stock_quote("SBIN")
+        if q2:
+            print(f"SBIN: {q2.format_value()} ({q2.format_pct()}), Source={q2.source}, Stale={q2.is_stale}")
+        print("Final Telemetry Stats:", get_nse_mcp_stats())

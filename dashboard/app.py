@@ -44,9 +44,7 @@ from streamlit_autorefresh import st_autorefresh
 from live_market_service import (
     fetch_live_market_snapshot,
     get_live_intraday_candles,
-    get_market_session_status,
-    generate_live_market_story,
-    sync_live_candle_to_duckdb
+    get_market_session_status
 )
 from macro_story_engine import build_comprehensive_market_story
 
@@ -63,9 +61,8 @@ is_mkt_live, mkt_status_str, mkt_status_color = get_market_session_status()
 auto_refresh_ms = 15000 if is_mkt_live else 180000
 count = st_autorefresh(interval=auto_refresh_ms, limit=None, key="live_market_refresh_tick")
 
-# Load live market snapshot (sub-second cached in memory)
+# Load live market snapshot (cached in memory with strict IST provenance)
 live_snap = fetch_live_market_snapshot()
-sync_live_candle_to_duckdb(live_snap)
 
 latest_date = live_snap["timestamp"]
 is_market_open = live_snap["is_open"]
@@ -80,67 +77,96 @@ mcp_badge_html = """
 </div>
 """ if is_mcp_online else ""
 
-# Nifty 50 Real-Time Metrics
+# Nifty 50 Real-Time Metrics (Never hardcoded fake values)
 n_q = live_snap["nifty"]
-n_close = n_q.get("last", 25145.65) or 25145.65
-n_chg = n_q.get("chg_pts", -153.7)
-n_pct = n_q.get("chg_pct", -0.61)
-n_high = n_q.get("high", 25246.35)
-n_low = n_q.get("low", 25077.55)
-n_open = n_q.get("open", 25209.85)
-n_sl = n_q.get("sl", 25010.0)
-n_piv = n_q.get("pivot", 25150.0)
-n_t1 = n_q.get("t1", 25225.0)
-n_t2 = n_q.get("t2", 25310.0)
+n_val = n_q.get("value") or (n_q.get("last") if n_q.get("last", 0) > 0 else None)
+n_close = n_val
+n_chg = n_q.get("chg_pts")
+n_pct = n_q.get("chg_pct")
+n_high = n_q.get("high")
+n_low = n_q.get("low")
+n_open = n_q.get("open")
+n_sl = n_q.get("s1") or n_q.get("sl")
+n_piv = n_q.get("pivot")
+n_t1 = n_q.get("r1") or n_q.get("t1")
+n_t2 = n_q.get("r2") or n_q.get("t2")
+n_is_stale = n_q.get("is_stale", False)
+n_prev_date = n_q.get("prev_session_date", "N/A")
 
 # Bank Nifty Real-Time Metrics
 b_q = live_snap["banknifty"]
-b_close = b_q.get("last", 60975.05) or 60975.05
-b_chg = b_q.get("chg_pts", -543.45)
-b_pct = b_q.get("chg_pct", -0.88)
-b_high = b_q.get("high", 61600.0)
-b_low = b_q.get("low", 60800.0)
-b_open = b_q.get("open", 61500.0)
-b_sl = b_q.get("sl", 60650.0)
-b_piv = b_q.get("pivot", 61125.0)
-b_t1 = b_q.get("t1", 61450.0)
-b_t2 = b_q.get("t2", 61925.0)
+b_val = b_q.get("value") or (b_q.get("last") if b_q.get("last", 0) > 0 else None)
+b_close = b_val
+b_chg = b_q.get("chg_pts")
+b_pct = b_q.get("chg_pct")
+b_high = b_q.get("high")
+b_low = b_q.get("low")
+b_open = b_q.get("open")
+b_sl = b_q.get("s1") or b_q.get("sl")
+b_piv = b_q.get("pivot")
+b_t1 = b_q.get("r1") or b_q.get("t1")
+b_t2 = b_q.get("r2") or b_q.get("t2")
+b_is_stale = b_q.get("is_stale", False)
+b_prev_date = b_q.get("prev_session_date", "N/A")
 
 # Sensex Real-Time Metrics
 s_q = live_snap["sensex"]
-s_close = s_q.get("last", 81639.90) or 81639.90
-s_chg = s_q.get("chg_pts", -271.1)
-s_pct = s_q.get("chg_pct", -0.33)
-s_sl = s_q.get("sl", 81200.0)
-s_piv = s_q.get("pivot", 81680.0)
-s_t1 = s_q.get("t1", 81960.0)
-s_t2 = s_q.get("t2", 82350.0)
+s_val = s_q.get("value") or (s_q.get("last") if s_q.get("last", 0) > 0 else None)
+s_close = s_val
+s_chg = s_q.get("chg_pts")
+s_pct = s_q.get("chg_pct")
+s_high = s_q.get("high")
+s_low = s_q.get("low")
+s_open = s_q.get("open")
+s_sl = s_q.get("s1") or s_q.get("sl")
+s_piv = s_q.get("pivot")
+s_t1 = s_q.get("r1") or s_q.get("t1")
+s_t2 = s_q.get("r2") or s_q.get("t2")
+s_is_stale = s_q.get("is_stale", False)
+s_prev_date = s_q.get("prev_session_date", "N/A")
 
-# GIFT Nifty Real-Time Metrics (Official NSE IX GIFT City Feed)
+# GIFT Nifty Real-Time Metrics (Official NSE IX GIFT City Feed or explicit approximation)
 g_q = live_snap.get("giftnifty", {})
-g_close = g_q.get("last", round(n_close + 25.0, 2)) or round(n_close + 25.0, 2)
-g_chg = g_q.get("chg_pts", 25.0)
-g_pct = g_q.get("chg_pct", 0.10)
-g_high = g_q.get("high", round(g_close + 35.0, 2))
-g_low = g_q.get("low", round(g_close - 35.0, 2))
-g_open = g_q.get("open", g_close)
-g_sl = g_q.get("sl", round(g_close - 90.0, 1))
-g_piv = g_q.get("pivot", round(g_close - 15.0, 1))
-g_t1 = g_q.get("t1", round(g_close + 85.0, 1))
-g_t2 = g_q.get("t2", round(g_close + 170.0, 1))
 g_is_real = g_q.get("is_real", False)
-g_source_label = "NSE IX LIVE" if g_is_real else "CALIBRATED SPREAD"
-g_date_info = f"OFFICIAL NSE IX FEED (GIFT CITY) • {g_q.get('timestamp', latest_date)}" if g_is_real else f"SPREAD MODEL ESTIMATE (SPOT + {g_chg:+.1f} PTS) • {latest_date}"
+g_close = g_q.get("last")
+g_chg = g_q.get("chg_pts")
+g_pct = g_q.get("chg_pct")
+g_high = g_q.get("high")
+g_low = g_q.get("low")
+g_open = g_q.get("open")
+g_sl = g_q.get("s1") or g_q.get("sl")
+g_piv = g_q.get("pivot")
+g_t1 = g_q.get("r1") or g_q.get("t1")
+g_t2 = g_q.get("r2") or g_q.get("t2")
+g_prev_date = g_q.get("prev_session_date", "N/A")
 
-# Macro & Catalysts
-vix_close = live_snap["vix"].get("last", 16.17)
-vix_pct = live_snap["vix"].get("chg_pct", -2.52)
-crude_close = live_snap["crude"].get("last", 88.61)
-crude_pct = live_snap["crude"].get("chg_pct", 0.42)
-usd_close = live_snap["usdinr"].get("last", 94.25)
-usd_pct = live_snap["usdinr"].get("chg_pct", 0.22)
-sp_close = live_snap["sp500"].get("last", 7606.75)
-sp_pct = live_snap["sp500"].get("chg_pct", -0.15)
+if g_is_real and g_close is not None:
+    g_source_label = "OFFICIAL NSE IX"
+    g_date_info = f"OFFICIAL NSE IX FEED (GIFT CITY) • {g_q.get('timestamp', latest_date)}"
+else:
+    g_source_label = "APPROXIMATION (SPOT + SPREAD)"
+    if g_close is None and n_close is not None:
+        g_close = round(n_close + 25.0, 2)
+        g_chg = 25.0
+        g_pct = 0.10
+    g_date_info = f"SPREAD MODEL APPROXIMATION • {latest_date}"
+
+# Macro & Catalysts (Safe extraction, zero static fake defaults)
+vix_q = live_snap.get("vix", {})
+vix_close = vix_q.get("value") or (vix_q.get("last") if vix_q.get("last", 0) > 0 else None)
+vix_pct = vix_q.get("chg_pct")
+
+crude_q = live_snap.get("crude", {})
+crude_close = crude_q.get("value") or (crude_q.get("last") if crude_q.get("last", 0) > 0 else None)
+crude_pct = crude_q.get("chg_pct")
+
+usd_q = live_snap.get("usdinr", {})
+usd_close = usd_q.get("value") or (usd_q.get("last") if usd_q.get("last", 0) > 0 else None)
+usd_pct = usd_q.get("chg_pct")
+
+sp_q = live_snap.get("sp500", {})
+sp_close = sp_q.get("value") or (sp_q.get("last") if sp_q.get("last", 0) > 0 else None)
+sp_pct = sp_q.get("chg_pct")
 
 # ----------------- LUXURY EDITORIAL CSS (SYNCOPATE + CLASH DISPLAY) -----------------
 st.html("""
@@ -468,41 +494,85 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     dyn_bull = macro_story.get("bull_pct", 52)
     dyn_bear = macro_story.get("bear_pct", 48)
 
+    def format_chg_str(chg_pts, chg_pct, is_stale=False):
+        if chg_pts is None or chg_pct is None:
+            return "N/A (Feed Stale)"
+        stale_flag = " [STALE]" if is_stale else ""
+        return f"{'+' if chg_pts>=0 else ''}{chg_pct:.2f}% ({'+' if chg_pts>=0 else ''}{chg_pts:.1f} pts) {'▲' if chg_pts>=0 else '▼'}{stale_flag}"
+
+    def format_target_diff(target, spot):
+        if target is None or spot is None:
+            return "N/A"
+        diff = target - spot
+        return f"{'+' if diff>=0 else ''}{diff:.1f} pts from spot"
+
     INDEX_DATA = {
         "NIFTY 50": {
             "title": "NIFTY", "tag": "50",
-            "spot": n_close, "chg": f"{'+' if n_chg>=0 else ''}{n_pct:.2f}% ({'+' if n_chg>=0 else ''}{n_chg:.1f} pts) {'▲' if n_chg>=0 else '▼'}",
+            "spot": n_close,
+            "spot_str": f"{n_close:,.2f}" if n_close is not None else "N/A",
+            "chg": format_chg_str(n_chg, n_pct, n_is_stale),
             "conf": f"{dyn_conf}% QUANT CONVICTION",
             "date_info": f"{session_status} • {latest_date}",
+            "prev_date": n_prev_date,
             "sl": n_sl, "pivot": n_piv, "t1": n_t1, "t2": n_t2,
-            "t1_diff": f"{'+' if n_t1>=n_close else ''}{n_t1 - n_close:.1f} pts from spot", "t2_diff": f"{'+' if n_t2>=n_close else ''}{n_t2 - n_close:.1f} pts from spot",
+            "sl_str": f"{n_sl:,.1f}" if n_sl is not None else "N/A",
+            "piv_str": f"{n_piv:,.1f}" if n_piv is not None else "N/A",
+            "t1_str": f"{n_t1:,.1f}" if n_t1 is not None else "N/A",
+            "t2_str": f"{n_t2:,.1f}" if n_t2 is not None else "N/A",
+            "t1_diff": format_target_diff(n_t1, n_close),
+            "t2_diff": format_target_diff(n_t2, n_close),
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 25000
         },
         "BANK NIFTY": {
             "title": "BANK", "tag": "NIFTY",
-            "spot": b_close, "chg": f"{'+' if b_chg>=0 else ''}{b_pct:.2f}% ({'+' if b_chg>=0 else ''}{b_chg:.1f} pts) {'▲' if b_chg>=0 else '▼'}",
+            "spot": b_close,
+            "spot_str": f"{b_close:,.2f}" if b_close is not None else "N/A",
+            "chg": format_chg_str(b_chg, b_pct, b_is_stale),
             "conf": f"{dyn_conf}% QUANT CONVICTION",
             "date_info": f"{session_status} • {latest_date}",
+            "prev_date": b_prev_date,
             "sl": b_sl, "pivot": b_piv, "t1": b_t1, "t2": b_t2,
-            "t1_diff": f"{'+' if b_t1>=b_close else ''}{b_t1 - b_close:.1f} pts from spot", "t2_diff": f"{'+' if b_t2>=b_close else ''}{b_t2 - b_close:.1f} pts from spot",
+            "sl_str": f"{b_sl:,.1f}" if b_sl is not None else "N/A",
+            "piv_str": f"{b_piv:,.1f}" if b_piv is not None else "N/A",
+            "t1_str": f"{b_t1:,.1f}" if b_t1 is not None else "N/A",
+            "t2_str": f"{b_t2:,.1f}" if b_t2 is not None else "N/A",
+            "t1_diff": format_target_diff(b_t1, b_close),
+            "t2_diff": format_target_diff(b_t2, b_close),
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 61000
         },
         "GIFT NIFTY": {
             "title": "GIFT", "tag": f"NIFTY [{g_source_label}]",
-            "spot": g_close, "chg": f"{'+' if g_chg>=0 else ''}{g_pct:.2f}% ({'+' if g_chg>=0 else ''}{g_chg:.1f} pts) {'▲' if g_chg>=0 else '▼'}",
+            "spot": g_close,
+            "spot_str": f"{g_close:,.2f}" if g_close is not None else "N/A",
+            "chg": format_chg_str(g_chg, g_pct),
             "conf": f"{dyn_conf}% QUANT CONVICTION",
             "date_info": g_date_info,
+            "prev_date": g_prev_date,
             "sl": g_sl, "pivot": g_piv, "t1": g_t1, "t2": g_t2,
-            "t1_diff": f"{'+' if g_t1>=g_close else ''}{g_t1 - g_close:.1f} pts from spot", "t2_diff": f"{'+' if g_t2>=g_close else ''}{g_t2 - g_close:.1f} pts from spot",
+            "sl_str": f"{g_sl:,.1f}" if g_sl is not None else "N/A",
+            "piv_str": f"{g_piv:,.1f}" if g_piv is not None else "N/A",
+            "t1_str": f"{g_t1:,.1f}" if g_t1 is not None else "N/A",
+            "t2_str": f"{g_t2:,.1f}" if g_t2 is not None else "N/A",
+            "t1_diff": format_target_diff(g_t1, g_close),
+            "t2_diff": format_target_diff(g_t2, g_close),
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 25200
         },
         "SENSEX": {
             "title": "SENSEX", "tag": "BSE",
-            "spot": s_close, "chg": f"{'+' if s_chg>=0 else ''}{s_pct:.2f}% ({'+' if s_chg>=0 else ''}{s_chg:.1f} pts) {'▲' if s_chg>=0 else '▼'}",
+            "spot": s_close,
+            "spot_str": f"{s_close:,.2f}" if s_close is not None else "N/A",
+            "chg": format_chg_str(s_chg, s_pct, s_is_stale),
             "conf": f"{dyn_conf}% QUANT CONVICTION",
             "date_info": f"{session_status} • {latest_date}",
+            "prev_date": s_prev_date,
             "sl": s_sl, "pivot": s_piv, "t1": s_t1, "t2": s_t2,
-            "t1_diff": f"{'+' if s_t1>=s_close else ''}{s_t1 - s_close:.1f} pts from spot", "t2_diff": f"{'+' if s_t2>=s_close else ''}{s_t2 - s_close:.1f} pts from spot",
+            "sl_str": f"{s_sl:,.1f}" if s_sl is not None else "N/A",
+            "piv_str": f"{s_piv:,.1f}" if s_piv is not None else "N/A",
+            "t1_str": f"{s_t1:,.1f}" if s_t1 is not None else "N/A",
+            "t2_str": f"{s_t2:,.1f}" if s_t2 is not None else "N/A",
+            "t1_diff": format_target_diff(s_t1, s_close),
+            "t2_diff": format_target_diff(s_t2, s_close),
             "bull_pct": dyn_bull, "bear_pct": dyn_bear, "base": 81600
         }
     }
@@ -556,6 +626,10 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     """)
 
     # 3. MASTER HERO HORIZON (THE RUNWAY)
+    horizon_notice = f"THE APEX EXECUTION HORIZON (MATHEMATICALLY CALCULATED FROM PREVIOUS SESSION: {current['prev_date']} OHLC)"
+    if live_snap.get("is_post_close"):
+        horizon_notice += " • NEXT-SESSION HORIZON ACTIVE"
+
     st.html(f"""
     <div class="monolith-card-gold" style="text-align:center;">
         <div style="display:flex; justify-content:center; gap:12px; margin-bottom:12px;">
@@ -573,7 +647,7 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
         <div style="display:flex; justify-content:center; align-items:center; gap:18px; margin:10px 0 16px 0;">
             <span style="font-family:'JetBrains Mono', monospace; font-size: clamp(36px, 5.5vw, 62px); font-weight:900; color:#FFFFFF; letter-spacing:-2px;">
-                {current['spot']:,.2f}
+                {current['spot_str']}
             </span>
             <span style="font-family:'JetBrains Mono', monospace; font-size:14px; font-weight:800; color:#10B981; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); padding:8px 16px; border-radius:12px;">
                 {current['chg']}
@@ -582,7 +656,7 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
         <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top:18px;">
             <div style="font-family:'Syncopate', sans-serif; font-size:10px; font-weight:700; color:#94A3B8; letter-spacing:3px; margin-bottom:14px;">
-                THE APEX EXECUTION HORIZON (MATHEMATICALLY CALCULATED FROM {latest_date} OHLC)
+                {horizon_notice}
             </div>
             <div style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#64748B;">
                 ⚠️ STATUTORY NOTICE: Algorithmic levels (S1, Pivot, R1, R2) are mathematical reference points derived from prior session OHLC, strictly for quantitative research. Not investment advice or trading calls.
@@ -596,25 +670,25 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     <div class="runway-responsive-grid">
         <div class="monolith-card" style="border-top:3px solid #F43F5E; text-align:center; padding:16px 8px; margin-bottom:0;">
             <span style="font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:800; color:#F43F5E; letter-spacing:1px;">🛑 STOP LOSS (S1)</span>
-            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['sl']:,.1f}</div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['sl_str']}</div>
             <span style="font-size:10px; color:#94A3B8;">Cut below floor</span>
         </div>
 
         <div class="monolith-card" style="border-top:3px solid #F59E0B; text-align:center; padding:16px 8px; margin-bottom:0; box-shadow:0 0 25px rgba(245,158,11,0.15);">
             <span style="font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:800; color:#F59E0B; letter-spacing:1px;">⚖️ PIVOT FLOOR (P)</span>
-            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['pivot']:,.1f}</div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['piv_str']}</div>
             <span style="font-size:10px; color:#FCD34D;">Dip Buy Zone</span>
         </div>
 
         <div class="monolith-card" style="border-top:3px solid #10B981; text-align:center; padding:16px 8px; margin-bottom:0; box-shadow:0 0 30px rgba(16,185,129,0.18);">
             <span style="font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:800; color:#10B981; letter-spacing:1px;">🎯 NEXT TARGET 1 (R1)</span>
-            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['t1']:,.1f}</div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['t1_str']}</div>
             <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:#10B981;">{current['t1_diff']}</span>
         </div>
 
         <div class="monolith-card" style="border-top:3px solid #00F0FF; text-align:center; padding:16px 8px; margin-bottom:0; box-shadow:0 0 30px rgba(0,240,255,0.18);">
             <span style="font-family:'JetBrains Mono', monospace; font-size:10.5px; font-weight:800; color:#00F0FF; letter-spacing:1px;">🚀 TARGET 2 (R2)</span>
-            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['t2']:,.1f}</div>
+            <div style="font-family:'JetBrains Mono', monospace; font-size:clamp(19px, 2.5vw, 26px); font-weight:900; color:#FFFFFF; margin:4px 0;">{current['t2_str']}</div>
             <span style="font-family:'JetBrains Mono', monospace; font-size:11px; font-weight:800; color:#00F0FF;">{current['t2_diff']}</span>
         </div>
     </div>
@@ -631,10 +705,15 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
     usd_q_data = live_snap.get("usdinr", {})
     sp_q_data = live_snap.get("sp500", {})
 
-    vix_badge = "LIVE" if vix_q_data.get("is_live", False) else "POST-MKT/EOD"
-    crude_badge = "LIVE" if crude_q_data.get("is_live", False) else "GLOBAL FUT"
-    usd_badge = "LIVE" if usd_q_data.get("is_live", False) else "CACHED"
-    sp_badge = "LIVE" if sp_q_data.get("is_live", False) else "US GLOBEX"
+    vix_badge = "LIVE" if vix_q_data.get("is_live", False) else ("STALE" if vix_q_data.get("is_stale", False) else "POST-MKT")
+    crude_badge = "LIVE" if crude_q_data.get("is_live", False) else ("STALE" if crude_q_data.get("is_stale", False) else "GLOBAL FUT")
+    usd_badge = "LIVE" if usd_q_data.get("is_live", False) else ("STALE" if usd_q_data.get("is_stale", False) else "FOREX EOD")
+    sp_badge = "LIVE" if sp_q_data.get("is_live", False) else ("STALE" if sp_q_data.get("is_stale", False) else "US GLOBEX")
+
+    vix_disp = f"{vix_close:.2f} ({vix_pct:+.2f}%)" if (vix_close is not None and vix_pct is not None) else "N/A (Feed Offline)"
+    crude_disp = f"${crude_close:.2f} ({crude_pct:+.2f}%)" if (crude_close is not None and crude_pct is not None) else "N/A (Feed Offline)"
+    usd_disp = f"₹{usd_close:.2f} ({usd_pct:+.2f}%)" if (usd_close is not None and usd_pct is not None) else "N/A (Feed Offline)"
+    sp_disp = f"{sp_close:,.1f} ({sp_pct:+.2f}%)" if (sp_close is not None and sp_pct is not None) else "N/A (Feed Offline)"
 
     col_tow, col_chart = st.columns([1, 2])
 
@@ -660,19 +739,19 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
             <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#CBD5E1; margin-top:16px;">
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:6px; display:flex; justify-content:space-between;">
                     <span>India VIX <b style="color:#94A3B8; font-size:9.5px;">[{vix_badge}]</b>:</span>
-                    <b style="color:#10B981;">{vix_close:.2f} ({vix_pct:+.2f}%)</b>
+                    <b style="color:#10B981;">{vix_disp}</b>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:6px; display:flex; justify-content:space-between;">
                     <span>Crude WTI Oil <b style="color:#94A3B8; font-size:9.5px;">[{crude_badge}]</b>:</span>
-                    <b style="color:#10B981;">${crude_close:.2f} ({crude_pct:+.2f}%)</b>
+                    <b style="color:#10B981;">{crude_disp}</b>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); margin-bottom:6px; display:flex; justify-content:space-between;">
                     <span>USD/INR Currency <b style="color:#94A3B8; font-size:9.5px;">[{usd_badge}]</b>:</span>
-                    <b style="color:#10B981;">₹{usd_close:.2f} ({usd_pct:+.2f}%)</b>
+                    <b style="color:#10B981;">{usd_disp}</b>
                 </div>
                 <div style="background:rgba(0,0,0,0.4); padding:8px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between;">
                     <span>US S&P 500 Fut <b style="color:#94A3B8; font-size:9.5px;">[{sp_badge}]</b>:</span>
-                    <b style="color:#10B981;">{sp_close:,.1f} ({sp_pct:+.2f}%)</b>
+                    <b style="color:#10B981;">{sp_disp}</b>
                 </div>
             </div>
         </div>
@@ -680,41 +759,56 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
 
     with col_chart:
         # Pull real live 5m intraday candles from today's open market session
+        is_daily_bar_fallback = False
         if selected_asset == 'NIFTY 50':
             chart_sym = '^NSEI'
             chart_df = get_live_intraday_candles(chart_sym, '5m')
-            chart_name = "NIFTY 50 (5m Live Spot)"
+            is_daily_bar_fallback = chart_df.attrs.get("is_daily_fallback", False)
+            chart_name = "NIFTY 50 (5m Spot)" if not is_daily_bar_fallback else "NIFTY 50 (Daily Bar Archive)"
         elif selected_asset == 'BANK NIFTY':
             chart_sym = '^NSEBANK'
             chart_df = get_live_intraday_candles(chart_sym, '5m')
-            chart_name = "BANK NIFTY (5m Live Spot)"
+            is_daily_bar_fallback = chart_df.attrs.get("is_daily_fallback", False)
+            chart_name = "BANK NIFTY (5m Spot)" if not is_daily_bar_fallback else "BANK NIFTY (Daily Bar Archive)"
         elif selected_asset == 'GIFT NIFTY':
             chart_sym = '^NSEI'
             chart_df = get_live_intraday_candles(chart_sym, '5m')
-            basis = round(g_close - n_close, 2)
+            is_daily_bar_fallback = chart_df.attrs.get("is_daily_fallback", False)
+            basis = round((g_close or 0.0) - (n_close or 0.0), 2) if (g_close and n_close) else 0.0
             if not chart_df.empty:
                 chart_df = chart_df.copy()
                 for col in ['Open', 'High', 'Low', 'Close']:
                     chart_df[col] = (chart_df[col] + basis).round(2)
-            chart_name = f"GIFT NIFTY (5m Live Futures Track • Basis {basis:+.1f} pts)"
+            chart_name = f"GIFT NIFTY ({'Official Derivative Track' if g_is_real else 'Approximation: Spot + Basis'})"
         else:
             chart_sym = '^BSESN'
             chart_df = get_live_intraday_candles(chart_sym, '5m')
-            chart_name = "SENSEX (5m Live BSE)"
+            is_daily_bar_fallback = chart_df.attrs.get("is_daily_fallback", False)
+            chart_name = "SENSEX (5m BSE)" if not is_daily_bar_fallback else "SENSEX (Daily Bar Archive)"
+
+        if is_daily_bar_fallback:
+            st.caption("ℹ️ *Note: Intraday 5m feed closed/unavailable. Showing genuine completed daily session bars from verified DuckDB archive.*")
+        elif selected_asset == 'GIFT NIFTY':
+            st.caption("ℹ️ *Note: GIFT Nifty candle track is calibrated from Spot candles adjusted for live futures basis spread.*")
 
         fig = go.Figure()
-        fig.add_trace(go.Candlestick(
-            x=chart_df['Date'],
-            open=chart_df['Open'], high=chart_df['High'],
-            low=chart_df['Low'], close=chart_df['Close'],
-            name=chart_name,
-            increasing_line_color='#10B981', decreasing_line_color='#F43F5E'
-        ))
+        if not chart_df.empty:
+            fig.add_trace(go.Candlestick(
+                x=chart_df['Date'],
+                open=chart_df['Open'], high=chart_df['High'],
+                low=chart_df['Low'], close=chart_df['Close'],
+                name=chart_name,
+                increasing_line_color='#10B981', decreasing_line_color='#F43F5E'
+            ))
 
-        fig.add_hline(y=current['t1'], line_dash="dash", line_color="#10B981", annotation_text=f"TARGET 1 ({current['t1']:,.1f})", annotation_position="top right")
-        fig.add_hline(y=current['t2'], line_dash="dash", line_color="#00F0FF", annotation_text=f"TARGET 2 ({current['t2']:,.1f})", annotation_position="top right")
-        fig.add_hline(y=current['pivot'], line_dash="solid", line_color="#F59E0B", annotation_text=f"PIVOT ({current['pivot']:,.1f})", annotation_position="bottom right")
-        fig.add_hline(y=current['sl'], line_dash="solid", line_color="#F43F5E", annotation_text=f"STOP ({current['sl']:,.1f})", annotation_position="bottom right")
+        if current['t1'] is not None:
+            fig.add_hline(y=current['t1'], line_dash="dash", line_color="#10B981", annotation_text=f"TARGET 1 ({current['t1']:,.1f})", annotation_position="top right")
+        if current['t2'] is not None:
+            fig.add_hline(y=current['t2'], line_dash="dash", line_color="#00F0FF", annotation_text=f"TARGET 2 ({current['t2']:,.1f})", annotation_position="top right")
+        if current['pivot'] is not None:
+            fig.add_hline(y=current['pivot'], line_dash="solid", line_color="#F59E0B", annotation_text=f"PIVOT ({current['pivot']:,.1f})", annotation_position="bottom right")
+        if current['sl'] is not None:
+            fig.add_hline(y=current['sl'], line_dash="solid", line_color="#F43F5E", annotation_text=f"STOP ({current['sl']:,.1f})", annotation_position="bottom right")
 
         fig.update_layout(
             template="plotly_dark",
@@ -842,43 +936,58 @@ if suite_view == "👑 APEX LUXURY COCKPIT":
         """)
 
     with col_news:
-        live_news = fetch_live_market_news(limit=3)
-        news_html_items = ""
-        for item in live_news:
-            source = html.escape(str(item.get('source', 'Financial Wire')))
-            credibility = html.escape(str(item.get('credibility', 'TIER 1 (OFFICIAL / VERIFIED)')))
-            color = item.get('color', '#10B981')
-            score = item.get('score', 8.0)
-            title = html.escape(str(item.get('title', '')))
-            expected_move = html.escape(str(item.get('expected_move', '100 - 200 pts')))
-            tag = html.escape(str(item.get('tag', 'MARKET UPDATE')))
-
-            news_html_items += f"""
-            <div style="background:rgba(0,0,0,0.4); border-left:3px solid {color}; padding:9px 12px; border-radius:8px; margin-bottom:8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; font-family:'JetBrains Mono', monospace;">
-                    <span style="color:#94A3B8;">{source} • {credibility}</span>
-                    <b style="color:{color}; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">{score}/10 IMPACT</b>
-                </div>
-                <div style="font-size:12px; font-weight:600; color:#E2E8F0; margin:4px 0; line-height:1.3;">
-                    {title}
-                </div>
-                <div style="display:flex; justify-content:space-between; font-size:10px; font-family:'JetBrains Mono', monospace; color:#64748B;">
-                    <span>Expected Move: <b style="color:#FCD34D;">{expected_move}</b></span>
-                    <span style="color:#94A3B8;">{tag}</span>
-                </div>
-            </div>
-            """
-        st.html(f"""
-        <div class="monolith-card" style="padding:16px; height:100%;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF;">
+        live_news = fetch_live_market_news(limit=4)
+        if not live_news:
+            st.html("""
+            <div class="monolith-card" style="padding:16px; height:100%;">
+                <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF; margin-bottom:12px;">
                     ⚡ IMPACT INTELLIGENCE & NEWS AUDIT
                 </div>
-                <span style="font-size:10px; font-family:'JetBrains Mono', monospace; color:#10B981; background:rgba(16,185,129,0.1); padding:2px 8px; border-radius:12px; border:1px solid rgba(16,185,129,0.3);">TIER 1 VERIFIED</span>
+                <div style="color:#94A3B8; font-size:12px; padding:28px 16px; text-align:center; font-family:'JetBrains Mono', monospace; background:rgba(0,0,0,0.3); border-radius:8px; border:1px dashed rgba(255,255,255,0.1);">
+                    📡 News Feed Currently Unavailable<br>
+                    <span style="font-size:10px; color:#64748B;">Official RSS feeds unreachable or network offline</span>
+                </div>
             </div>
-            {news_html_items}
-        </div>
-        """)
+            """)
+        else:
+            news_html_items = ""
+            for item in live_news:
+                source = html.escape(str(item.get('source', 'Financial Wire')))
+                credibility = html.escape(str(item.get('credibility', 'TIER 1 (OFFICIAL / VERIFIED)')))
+                color = item.get('color', '#10B981')
+                score = item.get('score', 8.0)
+                title = html.escape(str(item.get('title', '')))
+                expected_move = html.escape(str(item.get('expected_move', '100 - 200 pts')))
+                tag = html.escape(str(item.get('tag', 'MARKET UPDATE')))
+                link = html.escape(str(item.get('link', '#')))
+                pub_time = html.escape(str(item.get('published_ist') or item.get('time', '')))
+
+                news_html_items += f"""
+                <div style="background:rgba(0,0,0,0.4); border-left:3px solid {color}; padding:9px 12px; border-radius:8px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; font-family:'JetBrains Mono', monospace;">
+                        <span style="color:#94A3B8;">{source} • {credibility} {f'• {pub_time}' if pub_time else ''}</span>
+                        <b style="color:{color}; background:rgba(255,255,255,0.06); padding:2px 6px; border-radius:4px;">{score}/10 IMPACT</b>
+                    </div>
+                    <div style="font-size:12px; font-weight:600; color:#E2E8F0; margin:4px 0; line-height:1.3;">
+                        <a href="{link}" target="_blank" rel="noopener noreferrer" style="color:#E2E8F0; text-decoration:none;">{title} ↗</a>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:10px; font-family:'JetBrains Mono', monospace; color:#64748B;">
+                        <span>Expected Move: <b style="color:#FCD34D;">{expected_move}</b></span>
+                        <span style="color:#94A3B8;">{tag}</span>
+                    </div>
+                </div>
+                """
+            st.html(f"""
+            <div class="monolith-card" style="padding:16px; height:100%;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                    <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF;">
+                        ⚡ IMPACT INTELLIGENCE & NEWS AUDIT
+                    </div>
+                    <span style="font-size:10px; font-family:'JetBrains Mono', monospace; color:#10B981; background:rgba(16,185,129,0.1); padding:2px 8px; border-radius:12px; border:1px solid rgba(16,185,129,0.3);">TIER 1 RSS</span>
+                </div>
+                {news_html_items}
+            </div>
+            """)
 
     # 8. WALK-FORWARD LAB
     st.html("<div class='section-header'><span>05 / WALK-FORWARD VALIDATION & STATUTORY POST-FRICTION LAB</span></div>")
