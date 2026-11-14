@@ -17,10 +17,16 @@ def compute_intraday_strength_score(spot: float, piv: float, day_high: float, da
     Formula: Range position (40%) + Pivot proximity (35%) + Constituent breadth (25%).
     Strictly an intraday momentum heuristic; not a directional probability.
     """
+    spot = float(spot or 0.0)
+    piv = float(piv or spot)
+    day_high = float(day_high or spot)
+    day_low = float(day_low or spot)
+    vix = float(vix or 15.0)
+    hw_adv_ratio = float(hw_adv_ratio or 0.5)
+
     day_range = max(day_high - day_low, 1.0)
     range_pos = (spot - day_low) / day_range
     piv_proximity = 1.0 - min(abs(spot - piv) / day_range, 1.0)
-    vix_factor = clamp_val((20.0 - vix) / 10.0, 0.0, 1.0)
     
     score = (range_pos * 40.0) + (piv_proximity * 35.0) + (hw_adv_ratio * 25.0)
     return round(clamp_val(score, 5.0, 95.0), 1)
@@ -30,6 +36,12 @@ def compute_dynamic_bull_bear_radar(spot: float, day_high: float, day_low: float
     Computes real-time Intraday Strength distribution (Bulls vs Bears).
     Weights: Range Position (40%), Index % Change (35%), Constituent Breadth (25%).
     """
+    spot = float(spot or 0.0)
+    day_high = float(day_high or spot)
+    day_low = float(day_low or spot)
+    pct_chg = float(pct_chg or 0.0)
+    hw_adv_ratio = float(hw_adv_ratio or 0.5)
+
     day_range = max(day_high - day_low, 1.0)
     range_pos = (spot - day_low) / day_range
     score = (range_pos * 40.0) + (clamp_val(50.0 + (pct_chg * 12.0), 10.0, 90.0) * 0.35) + (hw_adv_ratio * 100.0 * 0.25)
@@ -61,9 +73,8 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
         q = snapshot.get("nifty", {})
         top_anchors = ["RELIANCE", "HDFCBANK"]
 
-    spot = q.get("value") or q.get("last")
-    if spot is not None:
-        spot = float(spot)
+    spot_val = q.get("value") or q.get("last")
+    spot = float(spot_val) if spot_val is not None else None
 
     # If feed has no valid spot price, return clean offline state
     if spot is None or spot <= 0.0:
@@ -83,31 +94,40 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
             "rr_ratio": 1.0
         }
 
-    pct = q.get("chg_pct", 0.0)
-    chg_pts = q.get("chg_pts", 0.0)
-    day_high = q.get("high", spot)
-    day_low = q.get("low", spot)
-    sl = q.get("s1") or q.get("sl", spot - 50.0)
-    piv = q.get("pivot", spot)
-    t1 = q.get("r1") or q.get("t1", spot + 50.0)
-    t2 = q.get("r2") or q.get("t2", spot + 100.0)
+    pct = float(q.get("chg_pct")) if q.get("chg_pct") is not None else 0.0
+    chg_pts = float(q.get("chg_pts")) if q.get("chg_pts") is not None else 0.0
+    raw_high = q.get("high")
+    raw_low = q.get("low")
+    day_high = float(raw_high) if raw_high is not None else spot
+    day_low = float(raw_low) if raw_low is not None else spot
+
+    # Defensive extraction for floor pivots (handles None safely)
+    raw_sl = q.get("s1") or q.get("sl")
+    raw_piv = q.get("pivot")
+    raw_t1 = q.get("r1") or q.get("t1")
+    raw_t2 = q.get("r2") or q.get("t2")
+
+    sl = float(raw_sl) if raw_sl is not None else round(spot - 50.0, 1)
+    piv = float(raw_piv) if raw_piv is not None else round(spot, 1)
+    t1 = float(raw_t1) if raw_t1 is not None else round(spot + 50.0, 1)
+    t2 = float(raw_t2) if raw_t2 is not None else round(spot + 100.0, 1)
 
     # Intermarket quotes
     vix_q = snapshot.get("vix", {})
     vix_val = vix_q.get("value") or vix_q.get("last")
-    vix_chg_pct = vix_q.get("chg_pct", 0.0)
+    vix_chg_pct = float(vix_q.get("chg_pct") or 0.0)
 
     crude_q = snapshot.get("crude", {})
     crude_val = crude_q.get("value") or crude_q.get("last")
-    crude_chg_pct = crude_q.get("chg_pct", 0.0)
+    crude_chg_pct = float(crude_q.get("chg_pct") or 0.0)
 
     usdinr_q = snapshot.get("usdinr", {})
     usd_val = usdinr_q.get("value") or usdinr_q.get("last")
-    usd_chg_pct = usdinr_q.get("chg_pct", 0.0)
+    usd_chg_pct = float(usdinr_q.get("chg_pct") or 0.0)
 
     sp_q = snapshot.get("sp500", {})
     sp_val = sp_q.get("value") or sp_q.get("last")
-    sp_chg_pct = sp_q.get("chg_pct", 0.0)
+    sp_chg_pct = float(sp_q.get("chg_pct") or 0.0)
 
     # Index Constituents from snapshot
     hw = snapshot.get("heavyweights", [])
@@ -131,7 +151,7 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
     top_leaders_str = ", ".join(top_leaders) if top_leaders else "Broad neutral breadth"
     top_drags_str = ", ".join(top_drags) if top_drags else "No major drags recorded"
 
-    # Distances
+    # Distances (guaranteed float arithmetic)
     dist_piv = piv - spot
     dist_sl = spot - sl
     dist_t1 = t1 - spot
@@ -147,7 +167,7 @@ def build_comprehensive_market_story(snapshot: Dict[str, Any], asset_name: str =
     )
     bull_pct, bear_pct = compute_dynamic_bull_bear_radar(
         spot, day_high, day_low,
-        float(pct) if pct is not None else 0.0,
+        pct,
         hw_adv_ratio
     )
 

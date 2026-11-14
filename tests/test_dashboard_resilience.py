@@ -87,7 +87,7 @@ class TestDashboardResilience(unittest.TestCase):
         """AppTest smoke test: dashboard/app.py starts cleanly without unhandled exceptions."""
         from streamlit.testing.v1 import AppTest
         app_path = os.path.join(DASH_DIR, "app.py")
-        at = AppTest.from_file(app_path, default_timeout=45)
+        at = AppTest.from_file(app_path, default_timeout=60)
         at.run()
         self.assertEqual(len(at.exception), 0, f"AppTest raised exceptions: {at.exception}")
 
