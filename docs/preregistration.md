@@ -76,21 +76,67 @@ Following this registration, all future model evaluations will be conducted stri
 
 ---
 
+### Candidate 5: Standardized S&P + VIX Logistic Regression
+* **Execution Strategy**: **Strategy S2 (Post-Open Intraday Trade)**
+* **Execution Window**: Enter ~09:20 IST, exit at 15:15 IST.
+* **Feature Set (2 Features)**:
+  1. `sp500_overnight_ret`: Cumulative finalized US close return between previous Indian close and current Indian open (decimal).
+  2. `vix_close`: Prior session India VIX close tick (points).
+* **Frozen Preprocessing (`StandardScaler`)**:
+  - `mean_`: `[0.000453, 14.2240]`
+  - `scale_`: `[0.007915, 2.4030]`
+* **Frozen Architecture (`LogisticRegression(C=1.0)`)**:
+  - Class 0 (Flat, Intercept = `+0.6982`): `coef = [+0.0518, -0.1426]`
+  - Class 1 (Gap Down, Intercept = `-1.0783`): `coef = [-0.6982, +0.0925]`
+  - Class 2 (Gap Up, Intercept = `+0.3800`): `coef = [+0.6464, +0.0500]`
+* **Model Artifact**: `models/candidate5_logreg_scaled.joblib`
+* **Model SHA-256 Hash**: `26d1c41a417db4eae62f7684850f2695d2dc690b33b8bfbc851d401f5b3d144d`
+* **Decision Rule**:
+  - Compute softmax class probabilities: $P_0, P_1, P_2$.
+  - If $P_2 = \max(P_0, P_1, P_2)$ and $P_2 \ge 0.40 \to$ Enter Long ATM Call at 09:20 IST.
+  - If $P_1 = \max(P_0, P_1, P_2)$ and $P_1 \ge 0.40 \to$ Enter Long ATM Put at 09:20 IST.
+  - Otherwise $\to$ Neutral / No Trade.
+
+---
+
 ## 3. Multiple Testing & Statistical Criteria
 
-1. **Family-Wise Error Rate**:
-   Evaluating 4 candidate models against the null hypothesis requires Bonferroni correction:
-   $$\alpha_{\text{adjusted}} = \frac{0.05}{4} = \mathbf{0.0125}$$
-   Across all 6 historical exploratory configurations, the threshold was $\alpha = 0.05 / 6 = \mathbf{0.00833}$.
-2. **Success Criterion for Forward-Test**:
+1. **Family-Wise Error Rate & Total Variants Declared**:
+   Across all historical research and tuning passes, a total of **$m = 15$ candidate models, feature sets, and threshold configurations** were evaluated:
+   1. Model A Close Classifier (100 trees, depth 6)
+   2. Model B Nowcast with synthetic GIFT basis
+   3. Model B Clean (un-proxied)
+   4. S&P 500 Implied Gap Rule (0.40 scalar)
+   5. S&P 500 Sign Baseline
+   6. Yesterday's Gap Momentum Baseline
+   7. Nifty 1D Momentum Baseline
+   8. Unscaled Logistic Regression
+   9. Scaled Logistic Regression (2 features)
+   10. Simplified Macro-3 Model (3 features)
+   11. Regime Gate $\tau = 0.50$
+   12. Regime Gate $\tau = 0.55$
+   13. Regime Gate $\tau = 0.60$
+   14. Regime Gate $\tau = 0.65$
+   15. Majority Class Baseline (Prior)
+
+   To guarantee family-wise error control at nominal level $\alpha = 0.05$, the Bonferroni-adjusted significance threshold is strictly:
+   $$\alpha_{\text{adjusted}} = \frac{0.05}{15} \approx \mathbf{0.00333}$$
+
+2. **Binding Methodological Disclaimer**:
+   > **IMPORTANT REGISTRATION NOTICE**:  
+   > *This document was written after viewing historical results, so only the forward test is confirmatory.*  
+   > Any retrospective in-sample or walk-forward backtest statistics reported on historical data (2019–2026) are strictly exploratory. Live statistical confirmation requires out-of-sample forward-test evaluation under the frozen parameters above.
+
+3. **Success Criterion for Live Forward-Test**:
    A candidate will be considered to demonstrate a true statistical edge if and only if:
-   - Paired out-of-sample forward-test accuracy delta vs S&P baseline achieves $p < 0.0125$.
+   - Paired out-of-sample forward-test accuracy delta vs S&P baseline achieves $p < 0.00333$.
    - Out-of-sample option P&L net of realistic friction (charges + 1 pt slippage) is positive with 95% bootstrap CI lower bound $> 0$.
    - Tested on $\ge 100$ independent forward-test sessions logged under `run_type = 'SCHEDULED'`.
 
 ---
 
 ## 4. Execution Policy & Governance
-- **No In-Sample Tweaks**: Model feature lists, weights, and thresholds are locked as of this commit.
+- **Zero In-Sample Tweaks**: Model feature lists, weights, and thresholds are locked as of this commit.
 - **Run Type Segregation**: Only rows tagged `run_type = 'SCHEDULED'` on genuine NSE trading days are eligible for performance scoring. `MANUAL` and `TEST` executions are logged for debugging but quarantined from performance records.
+- **Timing & Staleness Quarantine**: Execution timestamp delay $> 15$ minutes against scheduled target is flagged `status_flag = 'LATE'` and quarantined.
 

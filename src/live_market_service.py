@@ -38,6 +38,7 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
 HOLIDAYS_PATH = os.path.join(CONFIG_DIR, "nse_holidays.csv")
+CALENDAR_PATH = os.path.join(CONFIG_DIR, "nse_calendar.csv")
 WEIGHTS_PATH = os.path.join(CONFIG_DIR, "weights.csv")
 
 def load_index_weights_map() -> Dict[str, List[Dict[str, Any]]]:
@@ -124,8 +125,19 @@ CHARTINK_STOCK_MAP = {
 
 
 def load_nse_holidays_map() -> Dict[str, str]:
-    """Loads NSE holiday dates and names from config/nse_holidays.csv."""
+    """Loads NSE holiday dates and names from config/nse_calendar.csv or config/nse_holidays.csv."""
     holidays = {}
+    if os.path.exists(CALENDAR_PATH):
+        try:
+            df = pd.read_csv(CALENDAR_PATH)
+            for _, r in df[df["type"] == "HOLIDAY"].iterrows():
+                h_name = str(r["name"]).strip()
+                if h_name != "Weekend Closure":
+                    holidays[str(r["date"]).strip()] = h_name
+            if holidays:
+                return holidays
+        except Exception:
+            pass
     if os.path.exists(HOLIDAYS_PATH):
         try:
             df = pd.read_csv(HOLIDAYS_PATH)

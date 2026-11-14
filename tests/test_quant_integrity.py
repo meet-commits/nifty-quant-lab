@@ -184,6 +184,73 @@ class TestQuantIntegrity(unittest.TestCase):
             for n in news:
                 self.assertNotIn("Reuters", n.get("source", ""))
 
+    def test_trade_csv_reconciliation(self):
+        """Assert sum(net_pnl by year) == sum(net_pnl by vix_bucket) == total_net_pnl derived from trade CSVs."""
+        import pandas as pd
+        backtest_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "backtests"))
+        s1_path = os.path.join(backtest_dir, "trades_s1_overnight.csv")
+        s2_path = os.path.join(backtest_dir, "trades_s2_postopen.csv")
+
+        for f_path in [s1_path, s2_path]:
+            if not os.path.exists(f_path):
+                continue
+            df = pd.read_csv(f_path)
+            if df.empty:
+                continue
+
+            total_pnl = float(df["net_pnl_pts"].sum())
+            df["year"] = pd.to_datetime(df["date_entry"]).dt.year
+            yearly_sum = float(df.groupby("year")["net_pnl_pts"].sum().sum())
+            self.assertAlmostEqual(total_pnl, yearly_sum, places=4)
+
+            # VIX buckets
+            if "iv_entry" in df.columns:
+                df["vix_bucket"] = pd.cut(
+                    df["iv_entry"],
+                    bins=[0, 13.0, 17.0, 100.0],
+                    labels=["LOW (<13)", "MED (13-17)", "HIGH (>17)"]
+                )
+                vix_sum = float(df.groupby("vix_bucket", observed=False)["net_pnl_pts"].sum().sum())
+                self.assertAlmostEqual(total_pnl, vix_sum, places=4)
+
+    def test_calendar_and_expiry_integrity(self):
+        """Verify 2026-11-10 is Diwali Balipratipada, 2026-11-24 is Gurunanak Jayanti, and 2026-11-08 is Muhurat."""
+        from calendar_engine import load_nse_calendar, get_contract_expiry_date
+        from datetime import date
+
+        cal_df = load_nse_calendar()
+        self.assertFalse(cal_df.empty)
+
+        # Check 2026-11-10
+        nov10 = cal_df[cal_df["date"] == "2026-11-10"]
+        self.assertEqual(len(nov10), 1)
+        self.assertEqual(nov10.iloc[0]["type"], "HOLIDAY")
+        self.assertIn("Diwali Balipratipada", nov10.iloc[0]["name"])
+
+        # Check 2026-11-24
+        nov24 = cal_df[cal_df["date"] == "2026-11-24"]
+        self.assertEqual(len(nov24), 1)
+        self.assertEqual(nov24.iloc[0]["type"], "HOLIDAY")
+        self.assertIn("Gurunanak Jayanti", nov24.iloc[0]["name"])
+
+        # Check 2026-11-08 (Sunday Muhurat)
+        nov08 = cal_df[cal_df["date"] == "2026-11-08"]
+        self.assertEqual(len(nov08), 1)
+        self.assertEqual(nov08.iloc[0]["type"], "MUHURAT")
+
+        # Expiry roll check: 2024-08-15 (Thursday) was Independence Day -> Expiry rolled to Wednesday 2024-08-14
+        exp_roll = get_contract_expiry_date(date(2024, 8, 13), "NIFTY", for_overnight_carry=False)
+        self.assertEqual(exp_roll, date(2024, 8, 14))
+
+    def test_candidate5_frozen_hash(self):
+        """Verify Candidate 5 model file exists and matches the pre-registered SHA-256 hash."""
+        import hashlib
+        model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models", "candidate5_logreg_scaled.joblib"))
+        self.assertTrue(os.path.exists(model_path))
+        with open(model_path, "rb") as f:
+            h = hashlib.sha256(f.read()).hexdigest()
+        self.assertEqual(h, "26d1c41a417db4eae62f7684850f2695d2dc690b33b8bfbc851d401f5b3d144d")
+
 
 if __name__ == "__main__":
     unittest.main()

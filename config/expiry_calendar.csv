@@ -1,0 +1,7 @@
+instrument,start_date,end_date,regular_expiry_weekday,holiday_rule,description
+NIFTY,2019-02-11,2099-12-31,3,PREVIOUS_TRADING_DAY,NIFTY 50 weekly & monthly options expire on Thursday (or previous trading day if holiday)
+BANKNIFTY,2016-01-01,2023-09-03,3,PREVIOUS_TRADING_DAY,BANKNIFTY weekly options expired on Thursday
+BANKNIFTY,2023-09-04,2024-11-19,2,PREVIOUS_TRADING_DAY,BANKNIFTY weekly options expired on Wednesday (NSE Circular 26/2023)
+BANKNIFTY,2024-11-20,2099-12-31,3,PREVIOUS_TRADING_DAY,BANKNIFTY weekly discontinued per SEBI framework; monthly expiry on last Thursday
+FINNIFTY,2021-01-11,2024-11-19,1,PREVIOUS_TRADING_DAY,FINNIFTY weekly options expired on Tuesday
+MIDCPNIFTY,2022-01-24,2024-11-19,0,PREVIOUS_TRADING_DAY,Nifty Midcap Select weekly options expired on Monday

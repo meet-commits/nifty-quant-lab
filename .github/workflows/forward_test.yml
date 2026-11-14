@@ -6,6 +6,8 @@ on:
     - cron: '45 9 * * 1-5'
     # 03:15 UTC = 08:45 IST (Pre-Open Nowcast Inference, Mon-Fri)
     - cron: '15 3 * * 1-5'
+    # 03:50 UTC = 09:20 IST (Post-Open Spot Reference & Intraday S2 Entry, Mon-Fri)
+    - cron: '50 3 * * 1-5'
     # 04:00 UTC = 09:30 IST (Outcome Resolution Fill, Mon-Fri)
     - cron: '0 4 * * 1-5'
   workflow_dispatch:
@@ -19,6 +21,7 @@ on:
           - all
           - close_1515
           - preopen_0845
+          - postopen_0920
           - fill_outcomes
           - probe
           - audit
@@ -57,8 +60,10 @@ jobs:
             M=$(date -u +%M)
             if [ "$H" -eq 9 ]; then
               echo "TARGET_JOB=close_1515" >> $GITHUB_ENV
-            elif [ "$H" -eq 3 ]; then
+            elif [ "$H" -eq 3 ] && [ "$M" -lt 30 ]; then
               echo "TARGET_JOB=preopen_0845" >> $GITHUB_ENV
+            elif [ "$H" -eq 3 ] && [ "$M" -ge 30 ]; then
+              echo "TARGET_JOB=postopen_0920" >> $GITHUB_ENV
             elif [ "$H" -eq 4 ]; then
               echo "TARGET_JOB=fill_outcomes" >> $GITHUB_ENV
             else
