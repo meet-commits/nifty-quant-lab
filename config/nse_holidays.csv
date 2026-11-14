@@ -1,4 +1,80 @@
 date,holiday_name,exchange
+2019-01-01,New Year Day (Trading Holiday),NSE
+2019-02-13,Special Exchange Holiday,NSE
+2019-03-04,Mahashivratri,NSE
+2019-03-21,Holi,NSE
+2019-03-29,Special Exchange Holiday,NSE
+2019-04-17,Mahavir Jayanti,NSE
+2019-04-19,Good Friday,NSE
+2019-04-29,General Parliamentary Elections (Mumbai),NSE
+2019-05-01,Maharashtra Day,NSE
+2019-06-05,Id-Ul-Fitr (Ramzan Id),NSE
+2019-08-12,Bakri Id / Eid-ul-Adha,NSE
+2019-08-15,Independence Day,NSE
+2019-09-02,Ganesh Chaturthi,NSE
+2019-09-10,Muharram,NSE
+2019-10-02,Mahatma Gandhi Jayanti,NSE
+2019-10-08,Dussehra,NSE
+2019-10-21,Maharashtra Assembly Election,NSE
+2019-10-27,Diwali Laxmi Pujan (Muhurat Trading),NSE
+2019-10-28,Diwali Balipratipada,NSE
+2019-11-12,Gurunanak Jayanti,NSE
+2019-12-25,Christmas,NSE
+2020-02-21,Mahashivratri,NSE
+2020-03-10,Holi,NSE
+2020-04-02,Ram Navami,NSE
+2020-04-06,Mahavir Jayanti,NSE
+2020-04-10,Good Friday,NSE
+2020-04-14,Dr. Baba Saheb Ambedkar Jayanti,NSE
+2020-05-01,Maharashtra Day,NSE
+2020-05-25,Id-Ul-Fitr (Ramzan Id),NSE
+2020-10-02,Mahatma Gandhi Jayanti,NSE
+2020-11-14,Diwali Laxmi Pujan (Muhurat Trading),NSE
+2020-11-16,Diwali Balipratipada,NSE
+2020-11-30,Gurunanak Jayanti,NSE
+2020-12-25,Christmas,NSE
+2021-01-26,Republic Day,NSE
+2021-03-11,Mahashivratri,NSE
+2021-03-29,Holi,NSE
+2021-04-02,Good Friday,NSE
+2021-04-14,Dr. Baba Saheb Ambedkar Jayanti,NSE
+2021-04-21,Ram Navami,NSE
+2021-05-13,Id-Ul-Fitr (Ramzan Id),NSE
+2021-07-21,Bakri Id,NSE
+2021-08-19,Muharram,NSE
+2021-10-15,Dussehra,NSE
+2021-11-04,Diwali Laxmi Pujan (Muhurat Trading),NSE
+2021-11-05,Diwali Balipratipada,NSE
+2021-11-19,Gurunanak Jayanti,NSE
+2022-01-26,Republic Day,NSE
+2022-03-01,Mahashivratri,NSE
+2022-03-18,Holi,NSE
+2022-04-14,Dr. Baba Saheb Ambedkar Jayanti / Mahavir Jayanti,NSE
+2022-04-15,Good Friday,NSE
+2022-05-03,Id-Ul-Fitr (Ramzan Id),NSE
+2022-08-09,Muharram,NSE
+2022-08-15,Independence Day,NSE
+2022-08-31,Ganesh Chaturthi,NSE
+2022-10-05,Dussehra,NSE
+2022-10-24,Diwali Laxmi Pujan (Muhurat Trading),NSE
+2022-10-26,Diwali Balipratipada,NSE
+2022-11-08,Gurunanak Jayanti,NSE
+2023-01-26,Republic Day,NSE
+2023-03-07,Holi,NSE
+2023-03-30,Ram Navami,NSE
+2023-04-04,Mahavir Jayanti,NSE
+2023-04-07,Good Friday,NSE
+2023-04-14,Dr. Baba Saheb Ambedkar Jayanti,NSE
+2023-05-01,Maharashtra Day,NSE
+2023-06-29,Bakri Id,NSE
+2023-08-15,Independence Day,NSE
+2023-09-19,Ganesh Chaturthi,NSE
+2023-10-02,Mahatma Gandhi Jayanti,NSE
+2023-10-24,Dussehra,NSE
+2023-11-12,Diwali Laxmi Pujan (Muhurat Trading),NSE
+2023-11-14,Diwali Balipratipada,NSE
+2023-11-27,Gurunanak Jayanti,NSE
+2023-12-25,Christmas,NSE
 2024-01-22,Special Holiday (Ram Mandir Inauguration),NSE
 2024-01-26,Republic Day,NSE
 2024-03-08,Mahashivratri,NSE
@@ -12,7 +88,7 @@ date,holiday_name,exchange
 2024-07-17,Muharram,NSE
 2024-08-15,Independence Day,NSE
 2024-10-02,Mahatma Gandhi Jayanti,NSE
-2024-11-01,Diwali Laxmi Pujan,NSE
+2024-11-01,Diwali Laxmi Pujan (Muhurat Trading),NSE
 2024-11-15,Gurunanak Jayanti,NSE
 2024-11-20,Maharashtra Assembly Election,NSE
 2024-12-25,Christmas,NSE
@@ -28,24 +104,29 @@ date,holiday_name,exchange
 2025-08-15,Independence Day,NSE
 2025-08-27,Ganesh Chaturthi,NSE
 2025-10-02,Mahatma Gandhi Jayanti,NSE
-2025-10-21,Diwali Laxmi Pujan,NSE
+2025-10-21,Diwali Laxmi Pujan (Muhurat Trading),NSE
 2025-10-22,Diwali Balipratipada,NSE
 2025-11-05,Sri Guru Nanak Dev Jayanti,NSE
 2025-12-25,Christmas,NSE
+2026-01-15,Makar Sankranti / Pongal,NSE
 2026-01-26,Republic Day,NSE
 2026-02-17,Mahashivratri,NSE
 2026-03-03,Holi,NSE
 2026-03-20,Id-Ul-Fitr,NSE
+2026-03-26,Shri Ram Navami,NSE
+2026-03-31,Mahavir Jayanti,NSE
 2026-04-03,Good Friday,NSE
 2026-04-14,Dr. Ambedkar Jayanti,NSE
 2026-05-01,Maharashtra Day,NSE
 2026-05-27,Bakri Id,NSE
+2026-05-28,Exchange Settlement Holiday,NSE
 2026-06-26,Muharram,NSE
 2026-08-15,Independence Day,NSE
-2026-09-15,Ganesh Chaturthi,NSE
+2026-09-14,Ganesh Chaturthi,NSE
+2026-09-15,Ganesh Visarjan (Observed),NSE
 2026-10-02,Mahatma Gandhi Jayanti,NSE
 2026-10-20,Dussehra,NSE
-2026-11-08,Diwali Laxmi Pujan,NSE
+2026-11-08,Diwali Laxmi Pujan (Muhurat Trading),NSE
+2026-11-10,Diwali Balipratipada,NSE
 2026-11-24,Gurunanak Jayanti,NSE
 2026-12-25,Christmas,NSE
-

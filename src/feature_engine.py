@@ -25,6 +25,11 @@ import pandas as pd
 from datetime import datetime
 from typing import Tuple, Dict, Any, Optional
 
+try:
+    from calendar_engine import calculate_calendar_dte, load_nse_calendar
+except ImportError:
+    from src.calendar_engine import calculate_calendar_dte, load_nse_calendar
+
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
 PARQUET_PATH = os.path.join(DATA_DIR, "market_data.parquet")
@@ -114,11 +119,19 @@ def build_feature_matrix(
     pivot_high = raw_df.pivot(index='date', columns='symbol', values='high').sort_index()
     pivot_low = raw_df.pivot(index='date', columns='symbol', values='low').sort_index()
 
-    # Forward-fill missing dates across international holidays
-    pivot_close = pivot_close.ffill().dropna(subset=['NIFTY_SPOT'])
-    pivot_open = pivot_open.ffill().dropna(subset=['NIFTY_SPOT'])
-    pivot_high = pivot_high.ffill().dropna(subset=['NIFTY_SPOT'])
-    pivot_low = pivot_low.ffill().dropna(subset=['NIFTY_SPOT'])
+    # Forward-fill global cues across international holidays
+    pivot_close = pivot_close.ffill()
+    pivot_open = pivot_open.ffill()
+    pivot_high = pivot_high.ffill()
+    pivot_low = pivot_low.ffill()
+
+    # Strictly retain genuine Indian trading sessions where NIFTY_SPOT traded
+    nifty_trading_dates = raw_df[raw_df['symbol'] == 'NIFTY_SPOT']['date'].dropna().unique()
+    valid_dt_index = pd.DatetimeIndex(sorted(nifty_trading_dates), name='date')
+    pivot_close = pivot_close.reindex(valid_dt_index)
+    pivot_open = pivot_open.reindex(valid_dt_index)
+    pivot_high = pivot_high.reindex(valid_dt_index)
+    pivot_low = pivot_low.reindex(valid_dt_index)
 
     # Append live row if provided
     if live_row_dict is not None:
@@ -215,12 +228,23 @@ def build_feature_matrix(
     else:
         features['gift_basis_pct'] = features['sp500_overnight_ret'] * 100.0 * 0.45  # Proxy in historical data
 
-    # 7. Calendar Features
+    # 7. Calendar Features (Calendar-aware DTE from circulars & holiday lists)
     features['day_of_week'] = np.array([d.weekday() for d in features.index])
-    # Days to Thursday weekly expiry: (3 - day_of_week) % 7
-    # For overnight carry entering at 15:15 on Thursday (expiry day), roll to next week's contract (DTE = 7)
-    raw_dte = (3 - features['day_of_week']) % 7
-    features['days_to_expiry'] = np.where(raw_dte == 0, 7, raw_dte)
+    features['days_to_expiry'] = np.array([
+        calculate_calendar_dte(d.date() if hasattr(d, 'date') else d, instrument='NIFTY', for_overnight_carry=True)
+        for d in features.index
+    ])
+
+    # Tag session type from nse_calendar.csv
+    cal_df = load_nse_calendar()
+    if not cal_df.empty:
+        cal_type_map = dict(zip(cal_df['date_dt'], cal_df['type']))
+        features['session_type'] = [
+            cal_type_map.get(d.date() if hasattr(d, 'date') else d, 'NORMAL')
+            for d in features.index
+        ]
+    else:
+        features['session_type'] = 'NORMAL'
 
     # 8. TARGET VARIABLES (Computed only on historical rows, not on live inference row)
     features['next_open'] = features['nifty_open'].shift(-1)
@@ -245,6 +269,8 @@ def build_feature_matrix(
     # Fill any remaining NaNs in feature columns using backward/forward fill
     features = features.bfill().ffill()
     features = features.reset_index()
+    if 'date' not in features.columns and 'index' in features.columns:
+        features = features.rename(columns={'index': 'date'})
 
     return features
 
