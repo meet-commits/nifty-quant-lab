@@ -136,45 +136,52 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
     </div>
     """)
 
-    # 2. Market Breadth
+    # 2. Market Breadth Health Gauge
     breadth = get_market_breadth_stats()
+    as_of_badge = f"AS OF: {breadth.get('as_of_date', 'N/A')} • {breadth.get('total_universe', 0)} NSE EQUITIES"
+
     st.html(f"""
     <div style="background:#0F172A; border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:16px; margin-bottom:18px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid rgba(255,255,255,0.06);">
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:16px;">📊</span>
-                <b style="font-family:'Syncopate', sans-serif; font-size:11px; color:#FFFFFF; letter-spacing:1px;">CHARTINK ATLAS: MARKET BREADTH HEALTH GAUGE</b>
+                <b style="font-family:'Syncopate', sans-serif; font-size:11px; color:#FFFFFF; letter-spacing:1px;">CHARTINK ATLAS: WHOLE UNIVERSE MARKET BREADTH</b>
             </div>
-            <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:800; color:#10B981; background:rgba(16,185,129,0.12); padding:3px 10px; border-radius:12px; border:1px solid rgba(16,185,129,0.3);">
-                {html.escape(breadth['market_regime'])}
-            </span>
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#94A3B8; background:rgba(255,255,255,0.06); padding:3px 10px; border-radius:12px; border:1px solid rgba(255,255,255,0.1);">
+                    📅 {html.escape(as_of_badge)}
+                </span>
+                <span style="font-family:'JetBrains Mono', monospace; font-size:10px; font-weight:800; color:{breadth.get('regime_color', '#10B981')}; background:{breadth.get('regime_color', '#10B981')}22; padding:3px 10px; border-radius:12px; border:1px solid {breadth.get('regime_color', '#10B981')}55;">
+                    ● {html.escape(breadth.get('market_regime', 'HEALTHY EXPANSION'))}
+                </span>
+            </div>
         </div>
         <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; font-family:'JetBrains Mono', monospace;">
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 20 EMA</div>
-                <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{breadth['pct_above_20_ema']}%</div>
+                <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{breadth.get('pct_above_20_ema', 0.0)}%</div>
                 <div style="font-size:9.5px; color:#64748B;">Short-Term Push</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 50 EMA</div>
-                <div style="font-size:20px; font-weight:900; color:#00F0FF; margin:2px 0;">{breadth['pct_above_50_ema']}%</div>
+                <div style="font-size:20px; font-weight:900; color:#00F0FF; margin:2px 0;">{breadth.get('pct_above_50_ema', 0.0)}%</div>
                 <div style="font-size:9.5px; color:#64748B;">Structural Base</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">STOCKS > 200 EMA</div>
-                <div style="font-size:20px; font-weight:900; color:#F59E0B; margin:2px 0;">{breadth['pct_above_200_ema']}%</div>
+                <div style="font-size:20px; font-weight:900; color:#F59E0B; margin:2px 0;">{breadth.get('pct_above_200_ema', 0.0)}%</div>
                 <div style="font-size:9.5px; color:#64748B;">Macro Bull Base</div>
             </div>
             <div style="background:rgba(0,0,0,0.4); padding:12px; border-radius:10px; border:1px solid rgba(255,255,255,0.05);">
                 <div style="font-size:9.5px; color:#94A3B8;">ADVANCE / DECLINE</div>
-                <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{html.escape(str(breadth['adv_dec_ratio'])[:4])}</div>
-                <div style="font-size:9.5px; color:#10B981;">{breadth['advances']} Adv / {breadth['declines']} Dec</div>
+                <div style="font-size:20px; font-weight:900; color:#10B981; margin:2px 0;">{html.escape(str(breadth.get('adv_dec_ratio', '1.0'))[:6])}</div>
+                <div style="font-size:9.5px; color:#10B981;">{breadth.get('advances', 0)} Adv / {breadth.get('declines', 0)} Dec</div>
             </div>
         </div>
     </div>
     """)
 
-    # 3. Sector Heatmap
+    # 3. Dynamic Sector Heatmap
     sectors = get_sector_heatmap()
     sec_html_cards = ""
     for sc in sectors:
@@ -196,138 +203,140 @@ def render_chartink_pro_suite(live_snap: Dict[str, Any]) -> None:
     </div>
     """)
 
-    # 4. Scanner Category Selector
-    cat_list = list(CHARTINK_CATEGORIES.keys()) + ["🌐 All 16 Scanned Stocks"]
-    sel_cat = st.selectbox("Select Chartink Scanner Category:", cat_list, index=0)
+    # 4. Scanner Category Selector & Filter Clauses
+    scanner_names = list(CHARTINK_CATEGORIES.keys())
+    sel_cat = st.selectbox("Select Dynamic Technical Screener:", scanner_names, index=0)
+    active_cat = CHARTINK_CATEGORIES.get(sel_cat, {})
+    clauses_html = "<br>".join([f"<span style='color:#E2E8F0;'>{html.escape(c)}</span>" for c in active_cat.get('clauses', [])])
 
-    if sel_cat in CHARTINK_CATEGORIES:
-        active_cat = CHARTINK_CATEGORIES[sel_cat]
-        clauses_html = "<br>".join([f"<span style='color:#E2E8F0;'>{html.escape(c)}</span>" for c in active_cat['clauses']])
-        st.html(f"""
-        <div style="background:#0B132B; border:1px solid rgba(255,107,0,0.3); border-radius:12px; padding:16px; margin-bottom:18px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <span style="color:#FF6B00; font-size:16px;">🛠️</span>
-                    <b style="color:#FFFFFF; font-family:'Syncopate', sans-serif; font-size:11px;">CHARTINK FILTER QUERY BUILDER: {html.escape(sel_cat)}</b>
-                </div>
-            </div>
-            <div style="font-family:'JetBrains Mono', monospace; font-size:12px; line-height:1.6; background:rgba(0,0,0,0.5); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
-                {clauses_html}
-            </div>
-            <div style="font-size:11px; color:#94A3B8; margin-top:8px;">
-                <b>Description:</b> {html.escape(active_cat['desc'])}
+    st.html(f"""
+    <div style="background:#0B132B; border:1px solid rgba(255,107,0,0.3); border-radius:12px; padding:16px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="color:#FF6B00; font-size:16px;">🛠️</span>
+                <b style="color:#FFFFFF; font-family:'Syncopate', sans-serif; font-size:11px;">CHARTINK FILTER QUERY: {html.escape(sel_cat)}</b>
             </div>
         </div>
-        """)
-        table_stocks = [dict(s) for s in active_cat['stocks']]
-    else:
-        table_stocks = []
-        for c in CHARTINK_CATEGORIES.values():
-            table_stocks.extend([dict(s) for s in c['stocks']])
-
-    # Apply live quotes
-    for s in table_stocks:
-        if s["sym"] in live_snap.get("chartink_live_quotes", {}):
-            lq = live_snap["chartink_live_quotes"][s["sym"]]
-            if lq.get("last", 0) > 0:
-                s["price"] = lq["last"]
-                s["chg"] = lq.get("pct_str", s["chg"])
-
-    # 5. Sortable Results Table with st.column_config
-    st.html("""
-    <div style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF; margin-bottom:8px;">
-        📋 LIVE SCANNER RESULTS (NSE HIGH-LIQUIDITY SAMPLE • NATIVE SORTABLE)
+        <div style="font-family:'JetBrains Mono', monospace; font-size:12px; line-height:1.6; background:rgba(0,0,0,0.5); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.05);">
+            {clauses_html}
+        </div>
+        <div style="font-size:11px; color:#94A3B8; margin-top:8px;">
+            <b>Scan Logic:</b> {html.escape(active_cat.get('desc', ''))}
+        </div>
     </div>
     """)
 
-    results_data = []
-    for idx, s in enumerate(table_stocks):
-        raw_price = s.get("price")
-        price_num = float(raw_price) if isinstance(raw_price, (int, float)) else None
+    # Run Scan Execution Button & Session State Persistence
+    col_run_btn, col_run_info = st.columns([1.2, 3])
+    with col_run_btn:
+        run_scan_clicked = st.button("⚡ RUN SCAN", type="primary", use_container_width=True)
 
-        raw_chg = str(s.get("chg", "0.0")).replace("%", "").replace("+", "").strip()
-        try:
-            chg_num = float(raw_chg)
-        except ValueError:
-            chg_num = 0.0
-
-        results_data.append({
-            "Sr": idx + 1,
-            "Symbol": s["sym"],
-            "Company": s["name"],
-            "Sector": s["sec"],
-            "Price": price_num,
-            "Change %": chg_num,
-            "Volume Surge": s.get("vol", "1.0x"),
-            "Reference R1": float(s.get("t1", 0.0)),
-            "Reference R2": float(s.get("t2", 0.0)),
-            "Reference S1": float(s.get("sl", 0.0)),
-            "R:R": s.get("rr", "1:1.5"),
-            "Strength": s.get("conv", "70%")
-        })
-
-    st.dataframe(
-        pd.DataFrame(results_data),
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Sr": st.column_config.NumberColumn("Sr", width="small"),
-            "Symbol": st.column_config.TextColumn("Symbol", width="small"),
-            "Company": st.column_config.TextColumn("Company Name", width="medium"),
-            "Sector": st.column_config.TextColumn("Sector", width="small"),
-            "Price": st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
-            "Change %": st.column_config.NumberColumn("Change %", format="%.2f%%"),
-            "Reference R1": st.column_config.NumberColumn("Ref R1 (₹)", format="₹%.2f"),
-            "Reference R2": st.column_config.NumberColumn("Ref R2 (₹)", format="₹%.2f"),
-            "Reference S1": st.column_config.NumberColumn("Ref S1 (₹)", format="₹%.2f"),
-        }
+    # Check if scan needs execution
+    should_run = (
+        run_scan_clicked or
+        ("chartink_scan_data" not in st.session_state) or
+        (st.session_state.get("chartink_last_scan_name") != sel_cat)
     )
+
+    if should_run:
+        from chartink_engine import run_chartink_scan
+        with st.spinner(f"Evaluating {sel_cat} across whole NSE equity universe in DuckDB..."):
+            scan_df, scan_meta = run_chartink_scan(sel_cat)
+            st.session_state["chartink_scan_data"] = scan_df
+            st.session_state["chartink_scan_meta"] = scan_meta
+            st.session_state["chartink_last_scan_name"] = sel_cat
+
+    scan_df = st.session_state.get("chartink_scan_data", pd.DataFrame())
+    scan_meta = st.session_state.get("chartink_scan_meta", {})
+
+    with col_run_info:
+        as_of_info = scan_meta.get("as_of_date", breadth.get("as_of_date", "N/A"))
+        total_syms = scan_meta.get("total_universe", breadth.get("total_universe", 0))
+        matched_syms = len(scan_df)
+        st.html(f"""
+        <div style="font-family:'JetBrains Mono', monospace; font-size:11px; color:#94A3B8; padding:8px 12px; background:rgba(0,0,0,0.3); border-radius:8px; border:1px solid rgba(255,255,255,0.06);">
+            🎯 <b>{matched_syms}</b> stocks matched out of <b>{total_syms}</b> active NSE equities • <span style="color:#FCD34D;">As of {as_of_info}</span>
+        </div>
+        """)
+
+    # 5. Clean Sortable Results Table (ZERO hardcoded targets/stop-loss/conviction)
+    st.html(f"""
+    <div style="display:flex; justify-content:space-between; align-items:center; margin:14px 0 8px 0;">
+        <span style="font-family:'Syncopate', sans-serif; font-size:11px; font-weight:700; color:#FFFFFF;">
+            📋 LIVE SCANNER RESULTS: {html.escape(sel_cat)}
+        </span>
+        <span style="font-family:'JetBrains Mono', monospace; font-size:10px; color:#10B981;">
+            ● NATIVE SORTABLE • ZERO SYNTHETIC PREDICTIONS
+        </span>
+    </div>
+    """)
+
+    if scan_df.empty:
+        st.info(f"No stocks currently match the filter criteria for '{sel_cat}' as of {as_of_info}.")
+    else:
+        st.dataframe(
+            scan_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Sr": st.column_config.NumberColumn("Sr", width="small"),
+                "Symbol": st.column_config.TextColumn("Symbol", width="small"),
+                "Price": st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
+                "Change %": st.column_config.NumberColumn("Change %", format="%.2f%%"),
+                "Volume": st.column_config.NumberColumn("Volume", format="%d"),
+                "Volume Surge": st.column_config.TextColumn("Volume Surge", width="small"),
+                "RSI": st.column_config.NumberColumn("RSI (14)", format="%.1f"),
+                "EMA 20": st.column_config.NumberColumn("EMA 20 (₹)", format="₹%.2f"),
+                "EMA 50": st.column_config.NumberColumn("EMA 50 (₹)", format="₹%.2f"),
+                "EMA 200": st.column_config.NumberColumn("EMA 200 (₹)", format="₹%.2f"),
+                "ATR": st.column_config.NumberColumn("ATR (14) (₹)", format="₹%.2f")
+            }
+        )
 
     # 6. Interactive Candlestick & RSI Inspector
     st.html("""
     <div class="section-header"><span>02 / CHARTINK INTERACTIVE CHART & RSI(14) INSPECTOR</span></div>
     """)
 
-    stock_symbols = [s["sym"] for s in table_stocks]
-    if stock_symbols:
-        selected_inspect_stock = st.selectbox("Select Stock for Candlestick Inspector:", stock_symbols, index=0)
-        inspect_df = fetch_stock_real_ohlc(selected_inspect_stock, period="3mo")
-        is_genuine_data = inspect_df.get("is_real", pd.Series([True])).iloc[0] if 'is_real' in inspect_df.columns else True
-        data_badge = "🟢 GENUINE DAILY OHLC (NSE)" if is_genuine_data else "🟡 OFFLINE CACHED OHLC"
+    available_symbols = scan_df["Symbol"].tolist() if not scan_df.empty else ["RELIANCE", "HDFCBANK", "SBIN", "TRENT"]
+    selected_inspect_stock = st.selectbox("Select Stock for Candlestick Inspector:", available_symbols, index=0)
+    inspect_df = fetch_stock_real_ohlc(selected_inspect_stock, period="3mo")
+    is_genuine_data = inspect_df.get("is_real", pd.Series([True])).iloc[0] if 'is_real' in inspect_df.columns else True
+    data_badge = "🟢 GENUINE DAILY OHLC (NSE)" if is_genuine_data else "🟡 OFFLINE CACHED OHLC"
 
-        st.html(f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-family:'JetBrains Mono', monospace; font-size:11px;">
-            <span style="color:#94A3B8;">Asset: <b style="color:#FFFFFF;">{html.escape(selected_inspect_stock)}</b></span>
-            <span style="color:#10B981; background:rgba(16,185,129,0.12); padding:3px 10px; border-radius:6px; border:1px solid rgba(16,185,129,0.3);">{data_badge}</span>
-        </div>
-        """)
+    st.html(f"""
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; font-family:'JetBrains Mono', monospace; font-size:11px;">
+        <span style="color:#94A3B8;">Asset: <b style="color:#FFFFFF;">{html.escape(selected_inspect_stock)}</b></span>
+        <span style="color:#10B981; background:rgba(16,185,129,0.12); padding:3px 10px; border-radius:6px; border:1px solid rgba(16,185,129,0.3);">{data_badge}</span>
+    </div>
+    """)
 
-        fig_chartink = make_subplots(
-            rows=2, cols=1, shared_xaxes=True,
-            vertical_spacing=0.03, row_heights=[0.72, 0.28]
-        )
+    fig_chartink = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.03, row_heights=[0.72, 0.28]
+    )
 
-        fig_chartink.add_trace(go.Candlestick(
-            x=inspect_df['Date'], open=inspect_df['Open'], high=inspect_df['High'],
-            low=inspect_df['Low'], close=inspect_df['Close'],
-            name=selected_inspect_stock,
-            increasing_line_color='#10B981', decreasing_line_color='#F43F5E'
-        ), row=1, col=1)
+    fig_chartink.add_trace(go.Candlestick(
+        x=inspect_df['Date'], open=inspect_df['Open'], high=inspect_df['High'],
+        low=inspect_df['Low'], close=inspect_df['Close'],
+        name=selected_inspect_stock,
+        increasing_line_color='#10B981', decreasing_line_color='#F43F5E'
+    ), row=1, col=1)
 
-        fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['EMA20'], line=dict(color='#00F0FF', width=1.5), name='20 EMA'), row=1, col=1)
-        fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['EMA50'], line=dict(color='#F59E0B', width=1.5), name='50 EMA'), row=1, col=1)
-        fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['RSI'], line=dict(color='#FCD34D', width=1.5), name='RSI(14)'), row=2, col=1)
-        fig_chartink.add_hline(y=70, line_dash="dash", line_color="#F43F5E", row=2, col=1)
-        fig_chartink.add_hline(y=30, line_dash="dash", line_color="#10B981", row=2, col=1)
+    fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['EMA20'], line=dict(color='#00F0FF', width=1.5), name='20 EMA'), row=1, col=1)
+    fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['EMA50'], line=dict(color='#F59E0B', width=1.5), name='50 EMA'), row=1, col=1)
+    fig_chartink.add_trace(go.Scatter(x=inspect_df['Date'], y=inspect_df['RSI'], line=dict(color='#FCD34D', width=1.5), name='RSI(14)'), row=2, col=1)
+    fig_chartink.add_hline(y=70, line_dash="dash", line_color="#F43F5E", row=2, col=1)
+    fig_chartink.add_hline(y=30, line_dash="dash", line_color="#10B981", row=2, col=1)
 
-        fig_chartink.update_layout(
-            template="plotly_dark",
-            height=380,
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis_rangeslider_visible=False,
-            paper_bgcolor='#000000',
-            plot_bgcolor='#000000',
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        st.plotly_chart(fig_chartink, use_container_width=True)
+    fig_chartink.update_layout(
+        template="plotly_dark",
+        height=380,
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis_rangeslider_visible=False,
+        paper_bgcolor='#000000',
+        plot_bgcolor='#000000',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    st.plotly_chart(fig_chartink, use_container_width=True)
 

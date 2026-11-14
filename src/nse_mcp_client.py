@@ -18,7 +18,7 @@ import json
 import time
 import threading
 import requests
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 from typing import Dict, List, Any, Optional
 
@@ -265,6 +265,77 @@ def fetch_nse_mcp_stock_quote(symbol: str, is_market_hours: bool = True) -> Opti
     except Exception as e:
         _STATS["errors"] += 1
         print(f"⚠️ Error parsing MCP quote for {clean_sym}: {e}")
+
+    return None
+
+
+def fetch_nse_mcp_bhavcopy(trade_date: Optional[datetime.date] = None) -> Optional[List[Dict[str, Any]]]:
+    """
+    Fetches full EOD Bhavcopy from the official NSE MCP Bhavcopy Server.
+    Endpoint: https://mcp.nseindia.in/bhavcopy/cm/mcp
+    Returns normalized list of equity dictionary records or None on failure.
+    """
+    date_str = trade_date.strftime("%Y-%m-%d") if trade_date else datetime.now(IST).strftime("%Y-%m-%d")
+    
+    # Tool call to Bhavcopy MCP endpoint
+    res = _execute_mcp_tool_call("cm_get_bhavcopy", {"tradeDate": date_str, "segment": "CM"})
+    if not res:
+        # Fallback tool name variant
+        res = _execute_mcp_tool_call("get_bhavcopy", {"date": date_str})
+
+    if not res:
+        return None
+
+    content = res.get("content", [])
+    if not content or "text" not in content[0]:
+        return None
+
+    try:
+        raw_text = content[0]["text"]
+        parsed = json.loads(raw_text)
+        records = parsed.get("records") or parsed.get("data") or parsed.get("bhavcopy", [])
+        
+        normalized = []
+        for r in records:
+            series = str(r.get("SERIES") or r.get("series") or "EQ").strip()
+            if series not in ("EQ", "BE"):
+                continue
+            sym = str(r.get("SYMBOL") or r.get("symbol") or "").strip().upper()
+            if not sym:
+                continue
+            
+            c = float(r.get("CLOSE") or r.get("closePrice") or r.get("lastPrice") or 0.0)
+            if c <= 0.0:
+                continue
+                
+            o = float(r.get("OPEN") or r.get("openPrice") or c)
+            h = float(r.get("HIGH") or r.get("highPrice") or max(o, c))
+            l = float(r.get("LOW") or r.get("lowPrice") or min(o, c))
+            prev = float(r.get("PREVCLOSE") or r.get("prevClose") or c)
+            vol = int(r.get("TOTTRDQTY") or r.get("volume") or r.get("totalTradedQuantity") or 0)
+            turnover = float(r.get("TOTTRDVAL") or r.get("turnover") or 0.0)
+
+            normalized.append({
+                "trade_date": date_str,
+                "symbol": sym,
+                "series": series,
+                "open": round(o, 2),
+                "high": round(h, 2),
+                "low": round(l, 2),
+                "close": round(c, 2),
+                "prev_close": round(prev, 2),
+                "volume": vol,
+                "turnover": round(turnover, 2)
+            })
+
+        if normalized:
+            _STATS["bhavcopy_served"] = _STATS.get("bhavcopy_served", 0) + 1
+            _STATS["last_call_ts"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
+            return normalized
+
+    except Exception as e:
+        _STATS["errors"] += 1
+        print(f"⚠️ Error parsing MCP Bhavcopy response: {e}")
 
     return None
 
