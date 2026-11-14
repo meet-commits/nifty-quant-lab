@@ -29,6 +29,19 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 DB_PATH = os.path.join(DATA_DIR, "research.duckdb")
 HOLIDAYS_PATH = os.path.join(CONFIG_DIR, "nse_holidays.csv")
+ETF_LIST_PATH = os.path.join(CONFIG_DIR, "nse_etfs.csv")
+
+
+def get_official_etf_symbols() -> set:
+    """Loads official NSE ETF symbols from config/nse_etfs.csv."""
+    try:
+        if os.path.exists(ETF_LIST_PATH):
+            df_etf = pd.read_csv(ETF_LIST_PATH)
+            col = "Symbol" if "Symbol" in df_etf.columns else df_etf.columns[0]
+            return set(df_etf[col].astype(str).str.strip().str.upper())
+    except Exception:
+        pass
+    return set()
 
 
 def get_db_connection(read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -138,12 +151,13 @@ def fetch_fallback_nse_bhavcopy_csv(target_date: date) -> Optional[List[Dict[str
         if resp.status_code == 200 and len(resp.text) > 1000:
             records = []
             f = io.StringIO(resp.text)
-            reader = csv.DictReader(f)
-            for row in reader:
-                series = row.get("SERIES", "").strip()
+            reader = csv.DictReader(f, skipinitialspace=True)
+            for raw_row in reader:
+                row = {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in raw_row.items() if k}
+                series = row.get("SERIES", "").upper()
                 if series not in ("EQ", "BE"):
                     continue
-                sym = row.get("SYMBOL", "").strip().upper()
+                sym = row.get("SYMBOL", "").upper()
                 if not sym:
                     continue
                 try:
@@ -167,7 +181,8 @@ def fetch_fallback_nse_bhavcopy_csv(target_date: date) -> Optional[List[Dict[str
                         "close": round(c, 2),
                         "prev_close": round(prev, 2),
                         "volume": vol,
-                        "turnover": round(turnover, 2)
+                        "turnover": round(turnover, 2),
+                        "source": "NSE_CSV"
                     })
                 except (ValueError, TypeError):
                     continue
@@ -387,6 +402,68 @@ def get_bhavcopy_provenance_stats() -> Dict[str, Any]:
             "max_trade_date": str(summary[3]) if summary and summary[3] else "N/A",
             "num_symbols": summary[4] if summary else 0,
             "rows_per_source": rows_per_source
+        }
+    finally:
+        con.close()
+
+
+def check_bhavcopy_backfill_health(min_required_sessions: int = 250, max_stale_trading_days: int = 3) -> Dict[str, Any]:
+    """
+    Startup guard: asserts that DuckDB bhavcopy has >= 250 real sessions
+    and that the latest session is not older than 3 trading days.
+    """
+    con = get_db_connection(read_only=True)
+    try:
+        init_bhavcopy_table(con)
+        res = con.execute("""
+            SELECT 
+                COUNT(DISTINCT trade_date) as num_real_sessions,
+                MIN(trade_date) as min_date,
+                MAX(trade_date) as max_date,
+                COUNT(DISTINCT symbol) as num_symbols
+            FROM bhavcopy_daily
+            WHERE source IN ('NSE_MCP', 'NSE_CSV');
+        """).fetchone()
+
+        num_sessions = res[0] if res and res[0] is not None else 0
+        min_date = res[1]
+        max_date = res[2]
+        num_symbols = res[3] if res and res[3] is not None else 0
+
+        today = datetime.now(IST).date()
+
+        # Count trading days between max_date and today (excluding weekends)
+        trading_days_old = 0
+        if max_date:
+            curr = max_date + timedelta(days=1)
+            while curr <= today:
+                if curr.weekday() < 5:  # Monday to Friday
+                    trading_days_old += 1
+                curr += timedelta(days=1)
+        else:
+            trading_days_old = 9999
+
+        calendar_days_old = (today - max_date).days if max_date else 9999
+
+        is_healthy = True
+        status_message = "HEALTHY"
+
+        if num_sessions < min_required_sessions:
+            is_healthy = False
+            status_message = f"INSUFFICIENT_HISTORY: {num_sessions} real sessions (< {min_required_sessions} required)"
+        elif trading_days_old > max_stale_trading_days:
+            is_healthy = False
+            status_message = f"DATA_STALE: latest real session is {max_date} ({trading_days_old} trading days old > {max_stale_trading_days})"
+
+        return {
+            "is_healthy": is_healthy,
+            "status_message": status_message,
+            "num_sessions": num_sessions,
+            "min_date": str(min_date) if min_date else None,
+            "max_date": str(max_date) if max_date else None,
+            "num_symbols": num_symbols,
+            "trading_days_old": trading_days_old,
+            "calendar_days_old": calendar_days_old
         }
     finally:
         con.close()

@@ -321,6 +321,166 @@ class TestBhavcopyScanner(unittest.TestCase):
         oversold = scan_rsi_oversold_dips(latest_df, computed)
         self.assertNotIn("SPLIT_CORP", oversold['symbol'].tolist(), "Split symbol must not trigger false oversold dip!")
 
+    def test_synthetic_1_to_1_bonus(self):
+        """
+        Corporate Actions: 1:1 Bonus Issue.
+        When 1 bonus share is issued per share held (ratio 0.50),
+        historical prices must halve and volumes double so indicators remain continuous.
+        """
+        import numpy as np
+        dates = []
+        curr = date(2025, 1, 1)
+        while len(dates) < 220:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        records = []
+        p = 1000.0
+        for i, d in enumerate(dates):
+            if i == 200:  # 1:1 bonus ex-date
+                prev_c = 500.0  # NSE adjusted prev_close on ex-date
+                p = 505.0
+                vol = 102000
+            elif i > 200:
+                prev_c = p
+                p = round(p * 1.001, 2)
+                vol = 100000
+            else:
+                prev_c = p
+                p = round(1000.0 * (1.0 + np.sin(i / 15.0) * 0.01), 2)
+                vol = 50000
+
+            records.append({
+                "trade_date": d,
+                "symbol": "BONUS_CORP",
+                "series": "EQ",
+                "open": p,
+                "high": p * 1.01,
+                "low": p * 0.99,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": p * vol
+            })
+
+        df = pd.DataFrame(records)
+        computed = compute_universe_indicators(df)
+        latest_bar = computed[computed['trade_date'] == dates[-1]].iloc[0]
+
+        # 200 EMA must be in post-bonus range (~500, NOT ~1000)
+        self.assertLess(latest_bar['ema200'], 600.0)
+        self.assertGreater(latest_bar['ema200'], 450.0)
+        # Volume surge must remain steady (~1.0x, not 2.0x)
+        self.assertLess(latest_bar['vol_surge'], 1.4)
+
+    def test_genuine_40pct_crash_no_adjustment(self):
+        """
+        Corporate Actions: Genuine -40% crash without a corporate action.
+        When a stock crashes -40% (close 600 vs prev_close 1000) with NO exchange
+        corporate action (prev_close == stored close), prices must NOT be adjusted.
+        """
+        import numpy as np
+        from chartink_engine import scan_bearish_breakdown
+        dates = []
+        curr = date(2025, 1, 1)
+        while len(dates) < 220:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        records = []
+        p = 1000.0
+        for i, d in enumerate(dates):
+            if i == 205:
+                # Genuine market crash: -40%!
+                prev_c = 1000.0  # NSE published PREV_CLOSE is UNCHANGED because no action occurred
+                p = 600.0
+                vol = 500000
+            elif i > 205:
+                prev_c = p
+                p = round(p * 0.99, 2)
+                vol = 200000
+            else:
+                prev_c = p
+                p = round(1000.0 * (1.0 + np.sin(i / 10.0) * 0.01), 2)
+                vol = 100000
+
+            records.append({
+                "trade_date": d,
+                "symbol": "CRASH_STOCK",
+                "series": "EQ",
+                "open": prev_c,
+                "high": prev_c,
+                "low": p,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": p * vol
+            })
+
+        df = pd.DataFrame(records)
+        computed = compute_universe_indicators(df)
+        latest_bar = computed[computed['trade_date'] == dates[-1]].iloc[0]
+
+        # Historical prices must NOT have been scaled down
+        hist_bar = computed[computed['trade_date'] == dates[50]].iloc[0]
+        self.assertGreater(hist_bar['close'], 900.0, "Historical price must NOT be scaled for genuine crash!")
+
+        # 200 EMA reflects high pre-crash price (~980)
+        self.assertGreater(latest_bar['ema200'], 850.0)
+
+        # Genuine breakdown below 200 EMA must be detected!
+        latest_df = computed[computed['trade_date'] == dates[-1]].copy()
+        breakdowns = scan_bearish_breakdown(latest_df, computed)
+        self.assertIn("CRASH_STOCK", breakdowns['symbol'].tolist(), "Genuine -40% crash MUST trigger breakdown scan!")
+
+    def test_volume_surge_post_split_invariance(self):
+        """
+        Corporate Actions: Volume Surge post-split invariance.
+        Post-split volume jumps 5x nominally, but since historical volume is adjusted inversely,
+        the 20-day volume SMA adjusts in lockstep and volume surge ratio does NOT falsely spike.
+        """
+        dates = []
+        curr = date(2025, 1, 1)
+        while len(dates) < 220:
+            if curr.weekday() < 5:
+                dates.append(curr)
+            curr += timedelta(days=1)
+
+        records = []
+        p = 2000.0
+        for i, d in enumerate(dates):
+            if i >= 200:
+                prev_c = 400.0 if i == 200 else p
+                p = 402.0
+                vol = 500000  # Nominal volume expands 5x post-split
+            else:
+                prev_c = p
+                p = 2000.0
+                vol = 100000  # Pre-split volume was 100k
+
+            records.append({
+                "trade_date": d,
+                "symbol": "VOL_SPLIT",
+                "series": "EQ",
+                "open": p,
+                "high": p * 1.01,
+                "low": p * 0.99,
+                "close": p,
+                "prev_close": prev_c,
+                "volume": vol,
+                "turnover": p * vol
+            })
+
+        df = pd.DataFrame(records)
+        computed = compute_universe_indicators(df)
+        ex_bar = computed[computed['trade_date'] == dates[200]].iloc[0]
+
+        # Volume surge on ex-date should be ~1.0x (normal), not 5.0x
+        self.assertLess(ex_bar['vol_surge'], 1.25, "Volume surge must NOT spike 5x on stock split!")
+        self.assertGreater(ex_bar['vol_surge'], 0.85, "Volume surge must remain ~1.0x with inverse volume adjustment!")
+
     def test_ema200_session_count_eligibility(self):
         """
         Indicator Validity:

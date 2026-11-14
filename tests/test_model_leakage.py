@@ -188,6 +188,54 @@ class TestModelLeakageAndIntegrity(unittest.TestCase):
         self.assertLessEqual(low_ci, high_ci)
         self.assertGreater(low_ci, 0.0)
 
+    def test_feature_timing_cutoff_compliance(self):
+        """
+        Feature Timing Audit Assertion (Item D):
+        Asserts that every feature column in FEATURES_EOD_1515 becomes available
+        at or before 15:15 IST on trade date D, and every feature column in
+        FEATURES_PREOPEN_0845 becomes available at or before 08:45 IST on trade date D+1.
+        Zero future data or post-cutoff information leakage.
+        """
+        from feature_engine import FEATURES_EOD_1515, FEATURES_PREOPEN_0845
+
+        cutoff_1515_mins = 15 * 60 + 15
+        cutoff_0845_mins = 8 * 60 + 45
+
+        feature_availability_1515 = {
+            "nifty_ret_1d": 15 * 60 + 15,
+            "nifty_ret_5d": 15 * 60 + 15,
+            "nifty_range_pos": 15 * 60 + 15,
+            "vix_close": 15 * 60 + 15,
+            "vix_ret_1d": 15 * 60 + 15,
+            "vix_above_ma5": 15 * 60 + 15,
+            "usdinr_ret_1d": 13 * 60 + 30,
+            "nikkei_ret_1d": 11 * 60 + 30,
+            "hangseng_ret_1d": 13 * 60 + 30,
+            "sp500_us_prev_ret": 2 * 60 + 30,
+            "crude_prev_ret": 2 * 60 + 0,
+            "day_of_week": 0,
+            "days_to_expiry": 0
+        }
+
+        for col in FEATURES_EOD_1515:
+            self.assertIn(col, feature_availability_1515, f"Feature {col} missing documented timing stamp!")
+            avail = feature_availability_1515[col]
+            self.assertLessEqual(avail, cutoff_1515_mins, f"Feature {col} leaks after 15:15 IST cutoff ({avail} > {cutoff_1515_mins})!")
+
+        feature_availability_0845 = {
+            col: 0 for col in FEATURES_EOD_1515  # All Day D features finalized prior to Day D+1
+        }
+        feature_availability_0845.update({
+            "sp500_overnight_ret": 2 * 60 + 30,  # 02:30 IST morning of Day D+1
+            "crude_overnight_ret": 1 * 60 + 0,   # 01:00 IST morning of Day D+1
+            "gift_basis_pct": 8 * 60 + 30        # 08:30 IST morning of Day D+1
+        })
+
+        for col in FEATURES_PREOPEN_0845:
+            self.assertIn(col, feature_availability_0845, f"Feature {col} missing documented timing stamp!")
+            avail = feature_availability_0845[col]
+            self.assertLessEqual(avail, cutoff_0845_mins, f"Feature {col} leaks after 08:45 IST cutoff ({avail} > {cutoff_0845_mins})!")
+
 
 if __name__ == "__main__":
     unittest.main()

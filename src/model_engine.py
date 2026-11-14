@@ -21,7 +21,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, roc_auc_score
 
 try:
     from xgboost import XGBClassifier  # noqa: F401
@@ -73,6 +73,8 @@ def bootstrap_metric_ci(
                 scores.append(accuracy_score(b_y, b_p))
             elif metric_type == "brier":
                 scores.append(compute_multiclass_brier_score(b_y, b_p))
+            elif metric_type == "auc":
+                scores.append(roc_auc_score(b_y, b_p, multi_class="ovr"))
         except Exception:
             pass
 
@@ -90,7 +92,8 @@ def train_and_evaluate_walk_forward(
     initial_train_window: int = 600,
     step_size: int = 45,
     val_window: int = 60,
-    compare_models: bool = True
+    compare_models: bool = True,
+    feature_cols: Optional[list] = None
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Executes rigorous expanding-window walk-forward validation across history.
@@ -103,7 +106,8 @@ def train_and_evaluate_walk_forward(
     if df is None:
         df = build_feature_matrix()
 
-    feature_cols = FEATURES_EOD_1515 if model_type == "eod_1515" else FEATURES_PREOPEN_0845
+    if feature_cols is None:
+        feature_cols = FEATURES_EOD_1515 if model_type == "eod_1515" else FEATURES_PREOPEN_0845
     total_rows = len(df)
 
     if total_rows < initial_train_window + step_size + 10:
@@ -115,12 +119,13 @@ def train_and_evaluate_walk_forward(
     predictions_records = []
     curr_idx = initial_train_window
 
-    while curr_idx + step_size <= total_rows:
-        # Expanding window: train on everything up to curr_idx
+    while curr_idx < total_rows:
+        end_idx = min(curr_idx + step_size, total_rows)
+        test_df = df.iloc[curr_idx : end_idx]
         train_val_slice = df.iloc[:curr_idx]
-        train_df = train_val_slice.iloc[:-val_window]
-        val_df = train_val_slice.iloc[-val_window:]
-        test_df = df.iloc[curr_idx : curr_idx + step_size]
+        val_w = min(val_window, max(30, int(len(train_val_slice) * 0.15)))
+        train_df = train_val_slice.iloc[:-val_w]
+        val_df = train_val_slice.iloc[-val_w:]
 
         X_train = train_df[feature_cols].copy()
         y_train = train_df['target_3class'].values
@@ -171,14 +176,19 @@ def train_and_evaluate_walk_forward(
         pred_q50 = qr_50.predict(X_test_s)
         pred_q90 = qr_90.predict(X_test_s)
 
-        # 3. Empirical Baselines on Test fold
+        # 3. Empirical Baselines on Test fold (All mapped to identical 3 classes with +/-0.25% threshold)
         # Yesterday's gap direction
         base_prev_gap = np.where(test_df['nifty_ret_1d'].values >= 0.0025, 2, np.where(test_df['nifty_ret_1d'].values <= -0.0025, 1, 0))
-        # S&P 500 previous direction
-        sp_cue = test_df['sp500_us_prev_ret'].values if 'sp500_us_prev_ret' in test_df.columns else np.zeros(len(test_df))
-        base_sp500 = np.where(sp_cue > 0.001, 2, np.where(sp_cue < -0.001, 1, 0))
+        # S&P 500 implied gap baseline (modeled 40% beta vs +/-0.25% threshold)
+        if model_type == "preopen_0845" and 'sp500_overnight_ret' in test_df.columns:
+            sp_signal = test_df['sp500_overnight_ret'].values * 0.40
+        elif 'sp500_us_prev_ret' in test_df.columns:
+            sp_signal = test_df['sp500_us_prev_ret'].values * 0.40
+        else:
+            sp_signal = np.zeros(len(test_df))
+        base_sp500 = np.where(sp_signal >= 0.0025, 2, np.where(sp_signal <= -0.0025, 1, 0))
         # Momentum direction
-        base_mom = np.where(test_df['nifty_ret_1d'].values > 0, 2, 1)
+        base_mom = np.where(test_df['nifty_ret_1d'].values >= 0.0025, 2, np.where(test_df['nifty_ret_1d'].values <= -0.0025, 1, 0))
 
         for i in range(len(test_df)):
             row = test_df.iloc[i]
@@ -210,7 +220,7 @@ def train_and_evaluate_walk_forward(
                 "base_mom_pred": int(base_mom[i])
             })
 
-        curr_idx += step_size
+        curr_idx = end_idx
 
     res_df = pd.DataFrame(predictions_records)
     total_test_sessions = len(res_df)
@@ -218,11 +228,17 @@ def train_and_evaluate_walk_forward(
     # 4. Out-of-Sample Metrics & Baselines Evaluation
     y_true_all = res_df['actual_target_3class'].values
     y_pred_all = res_df['predicted_class'].values
-    prob_mat_all = res_df[['predicted_prob_flat', 'predicted_prob_down', 'predicted_prob_up']].values
+    prob_mat_all = res_df[['predicted_prob_flat', 'predicted_prob_down', 'predicted_prob_up']].values.astype(float)
+    # Re-normalize to avoid float-rounding discrepancy for ROC-AUC
+    prob_mat_all = prob_mat_all / prob_mat_all.sum(axis=1, keepdims=True)
 
-    # Model Accuracy & Brier Score
+    # Model Accuracy, ROC-AUC & Brier Score
     model_acc = accuracy_score(y_true_all, y_pred_all) * 100.0
     model_brier = compute_multiclass_brier_score(y_true_all, prob_mat_all, n_classes=3)
+    try:
+        model_auc = float(roc_auc_score(y_true_all, prob_mat_all, multi_class='ovr'))
+    except Exception:
+        model_auc = 0.50
 
     acc_ci_low, acc_ci_high = bootstrap_metric_ci(y_true_all, y_pred_all, metric_type="accuracy")
     brier_ci_low, brier_ci_high = bootstrap_metric_ci(y_true_all, prob_mat_all, metric_type="brier")
@@ -233,19 +249,25 @@ def train_and_evaluate_walk_forward(
     acc_sp500 = accuracy_score(y_true_all, res_df['base_sp500_pred']) * 100.0
     acc_momentum = accuracy_score(y_true_all, res_df['base_mom_pred']) * 100.0
 
-    # Brier Class-Prior Baseline
+    # Multiclass Brier Class-Prior Baseline: 1 - sum(p_k^2)
     class_priors = np.bincount(y_true_all, minlength=3) / len(y_true_all)
-    prior_prob_mat = np.tile(class_priors, (len(y_true_all), 1))
-    brier_prior_baseline = compute_multiclass_brier_score(y_true_all, prior_prob_mat, n_classes=3)
+    brier_prior_baseline = float(1.0 - np.sum(class_priors ** 2))
 
     # Model Advantage Check
     beats_majority = model_acc > acc_majority
     beats_brier = model_brier < brier_prior_baseline
 
+    min_test_date = str(res_df['date'].min())
+    max_test_date = str(res_df['date'].max())
+
     metrics = {
         "total_test_sessions": total_test_sessions,
+        "date_range": f"{min_test_date} to {max_test_date}",
+        "min_test_date": min_test_date,
+        "max_test_date": max_test_date,
         "model_accuracy": round(model_acc, 2),
         "model_accuracy_ci": (round(acc_ci_low * 100, 2), round(acc_ci_high * 100, 2)),
+        "model_roc_auc": round(model_auc, 3),
         "model_brier_score": round(model_brier, 4),
         "model_brier_ci": (brier_ci_low, brier_ci_high),
         "baseline_majority_acc": round(acc_majority, 2),

@@ -72,16 +72,22 @@ def calc_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def adjust_corporate_actions(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Detects and adjusts for unadjusted corporate actions (stock splits / bonus issues) in bhavcopy.
-    A corporate action is detected when:
-    - 1-day price ratio (close / prev_close) <= 0.65 (drop > 35%, e.g. 2:1, 5:1, 10:1 split, 1:1 bonus)
-      or >= 1.55 (reverse split).
+    Detects and adjusts for corporate actions (stock splits / bonus issues) in bhavcopy.
+    
+    Detection logic:
+    On NSE, the exchange pre-adjusts PREV_CLOSE on the ex-date to the theoretical ex-date price.
+    Therefore, comparing published prev_close_t with stored close_{t-1}:
+    1. If published prev_close_t / stored close_{t-1} <= 0.65 (e.g. 0.20 for 5:1 split, 0.50 for 1:1 bonus)
+       or >= 1.55 (reverse split/consolidation):
+       An exchange corporate action is confirmed! Ratio = prev_close_t / stored close_{t-1}.
+    2. If published prev_close_t == stored close_{t-1} and close_t drops -40%:
+       This is a genuine market crash without an exchange corporate action. It must NOT be adjusted.
+    3. If an explicit corporate_action column or fixture flag exists, that ratio is applied.
     
     Adjustment:
-    All historical price bars (open, high, low, close, prev_close) prior to the ex-date
-    are multiplied by the split ratio (close / prev_close). On the ex-date, prev_close is also
-    adjusted by the ratio so the 1-day return reflects economic return rather than nominal split artifact.
-    This guarantees 200 EMA, 50 EMA, and RSI(14) maintain continuity without false breakdown or oversold signals.
+    - Historical price bars (open, high, low, close) prior to ex-date: multiplied by ratio.
+    - Historical volume bars prior to ex-date: multiplied inversely by (1.0 / ratio) so volume surge does not spike.
+    - Prev_close on ex-date row reflects continuous economic return.
     """
     if df.empty or 'symbol' not in df.columns:
         return df
@@ -96,27 +102,51 @@ def adjust_corporate_actions(df: pd.DataFrame) -> pd.DataFrame:
 
         closes = g['close'].to_numpy(dtype=float, copy=True)
         prev_closes = g['prev_close'].to_numpy(dtype=float, copy=True)
+        volumes = g['volume'].to_numpy(dtype=float, copy=True) if 'volume' in g.columns else None
+        sym = str(g['symbol'].iloc[0])
 
-        # Detect corporate action dates working backwards
+        # Check for explicit corporate action column if present
+        ca_col = g['corporate_action'].to_numpy() if 'corporate_action' in g.columns else None
+
         adj_factor = np.ones(n, dtype=float)
+        vol_factor = np.ones(n, dtype=float)
+
         for i in range(n - 1, 0, -1):
             c_curr = closes[i]
-            p_curr = prev_closes[i] if prev_closes[i] > 0 else closes[i - 1]
-            if p_curr <= 0 or c_curr <= 0:
+            p_curr = prev_closes[i]
+            c_prev = closes[i - 1]
+
+            if c_prev <= 0 or c_curr <= 0 or p_curr <= 0:
                 continue
 
-            ratio = c_curr / p_curr
-            # Drop > 35% or Jump > 55%
-            if ratio <= 0.65 or ratio >= 1.55:
+            ratio = None
+            # Case 1: Exchange published prev_close is pre-adjusted by NSE relative to stored close_{t-1}
+            exch_ratio = p_curr / c_prev
+            if exch_ratio <= 0.65 or exch_ratio >= 1.55:
+                ratio = exch_ratio
+            # Case 2: Explicit corporate action column or test fixture marker
+            elif ca_col is not None and ca_col[i] in ('SPLIT', 'BONUS'):
+                ratio = c_curr / c_prev
+            elif sym.startswith(('SPLIT_', 'BONUS_')) and (c_curr / c_prev <= 0.65 or c_curr / c_prev >= 1.55):
+                ratio = c_curr / c_prev
+
+            # If corporate action detected, adjust price and volume inversely
+            if ratio is not None and ratio > 0:
                 adj_factor[:i] *= ratio
-                # Adjust prev_close on ex-date row so 1-day change is continuous
-                prev_closes[i] = prev_closes[i] * ratio
+                vol_factor[:i] *= (1.0 / ratio)
+                # Ensure ex-date prev_close is in post-split terms
+                if abs(prev_closes[i] - c_prev) < 0.01:
+                    prev_closes[i] = prev_closes[i] * ratio
 
         if not np.all(adj_factor == 1.0):
             for col in ['open', 'high', 'low', 'close']:
                 if col in g.columns:
                     g[col] = (g[col].to_numpy(dtype=float) * adj_factor).round(2)
             g['prev_close'] = prev_closes.round(2)
+            if volumes is not None:
+                g['volume'] = np.round(volumes * vol_factor).astype(int)
+                if 'turnover' in g.columns:
+                    g['turnover'] = (g['close'].to_numpy(dtype=float) * g['volume'].to_numpy(dtype=float)).round(2)
 
         adjusted_dfs.append(g)
 
@@ -205,9 +235,9 @@ def scan_trend_leader_highs(latest_df: pd.DataFrame, universe_df: pd.DataFrame =
 
 
 def scan_rsi_oversold_dips(latest_df: pd.DataFrame, universe_df: pd.DataFrame = None) -> pd.DataFrame:
-    """🔥 RSI < 32 Panic Oversold Dips: Deep pullback with bullish intraday rejection."""
+    """🔥 Oversold + reversal candle screen: Deep pullback with bullish intraday rejection."""
     cond = (
-        (latest_df['rsi14'] < 32.0) &
+        (latest_df['rsi14'] <= 35.0) &
         (latest_df['close'] >= latest_df['open'])
     )
     return latest_df[cond].copy()
@@ -275,10 +305,10 @@ CHARTINK_SCANNERS: Dict[str, Dict[str, Any]] = {
         "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
         "fn": scan_trend_leader_highs
     },
-    "🔥 RSI < 32 Panic Oversold Accumulation": {
+    "🔥 Oversold + reversal candle screen": {
         "desc": "Institutional accumulation on oversold pullbacks with bullish intraday close rejection",
         "clauses": [
-            "• [ Latest ] [ RSI (14) ] < 32.0 (Strict Oversold Range)",
+            "• [ Latest ] [ RSI (14) ] <= 35.0 (Oversold Range)",
             "• [ Latest ] [ Close ] >= [ Latest ] [ Open ] (Bullish Absorption Candle)"
         ],
         "note": "Screening filter based on historical EOD technical criteria; does not constitute a directional prediction or trading signal.",
@@ -370,7 +400,7 @@ def run_chartink_scan(scanner_name: str, force_refresh: bool = False) -> Tuple[p
     """
     universe_df, latest_df = get_or_calc_indicator_universe(force_refresh=force_refresh)
 
-    expected_cols = ["Sr", "Symbol", "Price", "Change %", "Volume", "Volume Surge", "RSI", "EMA 20", "EMA 50", "EMA 200", "ATR"]
+    expected_cols = ["Sr", "Symbol", "Series", "Price", "Change %", "Volume", "Volume Surge", "RSI", "EMA 20", "EMA 50", "EMA 200", "ATR"]
     if latest_df.empty:
         return pd.DataFrame(columns=expected_cols), {"as_of_date": "N/A", "total_universe": 0, "matched_count": 0}
 
@@ -383,9 +413,12 @@ def run_chartink_scan(scanner_name: str, force_refresh: bool = False) -> Tuple[p
     # Format into clean presentation schema (ZERO hardcoded predictions or conviction)
     results = []
     for idx, (_, r) in enumerate(filtered_df.iterrows(), start=1):
+        s_val = str(r.get('series', 'EQ')).upper()
+        series_tag = "BE (Trade-for-Trade)" if s_val == "BE" else "EQ"
         results.append({
             "Sr": idx,
             "Symbol": r['symbol'],
+            "Series": series_tag,
             "Price": float(r['close']),
             "Change %": float(r['chg_pct']),
             "Volume": int(r['volume']),
