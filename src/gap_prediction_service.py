@@ -121,6 +121,14 @@ def update_forward_test_outcomes() -> pd.DataFrame:
         if log_df.empty or "verdict" not in log_df.columns:
             return log_df
 
+        # Quarantine non-trading day and test records from live scoring
+        if 'is_trading_day' in log_df.columns:
+            non_trading = ~log_df['is_trading_day'].fillna(True).astype(bool)
+            log_df.loc[non_trading, 'verdict'] = "NON-TRADING DAY / QUARANTINED"
+        if 'run_type' in log_df.columns:
+            non_sched = log_df['run_type'].isin(['MANUAL', 'TEST'])
+            log_df.loc[non_sched, 'verdict'] = log_df.loc[non_sched, 'verdict'].replace("⏳ PENDING NEXT SESSION OPEN", "MANUAL/TEST RUN")
+
         # If any rows are PENDING, try to resolve via DuckDB daily_prices
         pending_mask = log_df['verdict'].str.contains("PENDING", na=False)
         if pending_mask.any() and os.path.exists(DB_PATH):

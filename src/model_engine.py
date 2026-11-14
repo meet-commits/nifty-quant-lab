@@ -177,8 +177,9 @@ def train_and_evaluate_walk_forward(
         pred_q90 = qr_90.predict(X_test_s)
 
         # 3. Empirical Baselines on Test fold (All mapped to identical 3 classes with +/-0.25% threshold)
-        # Yesterday's gap direction
-        base_prev_gap = np.where(test_df['nifty_ret_1d'].values >= 0.0025, 2, np.where(test_df['nifty_ret_1d'].values <= -0.0025, 1, 0))
+        # Yesterday's open gap direction
+        prev_gap_vals = test_df['prev_open_gap_pct'].values if 'prev_open_gap_pct' in test_df.columns else test_df['gap_pct'].shift(1).fillna(0.0).values
+        base_prev_gap = np.where(prev_gap_vals >= 0.25, 2, np.where(prev_gap_vals <= -0.25, 1, 0))
         # S&P 500 implied gap baseline (modeled 40% beta vs +/-0.25% threshold)
         if model_type == "preopen_0845" and 'sp500_overnight_ret' in test_df.columns:
             sp_signal = test_df['sp500_overnight_ret'].values * 0.40
@@ -202,6 +203,8 @@ def train_and_evaluate_walk_forward(
             predictions_records.append({
                 "date": row['date'],
                 "nifty_close": float(row['nifty_close']),
+                "nifty_open": float(row.get('nifty_open', row['nifty_close'])),
+                "next_open": float(row.get('next_open', row['nifty_close'] + act_gap_pts)),
                 "days_to_expiry": float(row.get('days_to_expiry', 3)),
                 "vix_close": float(row.get('vix_close', 15.0)),
                 "actual_gap_pct": act_gap_pct,

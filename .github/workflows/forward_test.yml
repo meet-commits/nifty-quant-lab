@@ -20,6 +20,7 @@ on:
           - close_1515
           - preopen_0845
           - fill_outcomes
+          - probe
           - audit
 
 permissions:
@@ -67,7 +68,11 @@ jobs:
 
       - name: Execute forward test runner
         run: |
-          python scripts/forward_test_runner.py --job-type ${{ env.TARGET_JOB }}
+          RUN_TYPE="SCHEDULED"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RUN_TYPE="MANUAL"
+          fi
+          python scripts/forward_test_runner.py --job-type ${{ env.TARGET_JOB }} --run-type $RUN_TYPE
 
       - name: Commit and push predictions log to data-archive branch
         run: |
